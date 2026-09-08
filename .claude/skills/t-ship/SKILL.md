@@ -1,0 +1,44 @@
+---
+name: t-ship
+description: Ship a task — gate, mark the draft PR ready, watch CI, obtain the human's confirmation, squash-merge with a commit written from the record. The only path to the trunk. Use when a task is finished.
+---
+
+# Ship a task
+
+Read `.t-workflow/AGENTS.md`.
+
+1. `.t-workflow/scripts/gate.sh ship <id>`. Any `BLOCKED:` line → stop and relay it
+   with the command it names. Keep the output: it is the evidence for step 4.
+2. `gh pr ready <pr>`. CI starts here (drafts skip it). Then `gh pr checks <pr> --watch`.
+   No CI configured → say so and continue. Red → `gh pr ready <pr> --undo`, report
+   which check failed, name `/t-work <id>`. Stop.
+3. Do not edit anything. A defect noticed here is a finding for the report, not a fix.
+4. **Ask the human to confirm**, last thing in the message, with the PR URL, one plain
+   paragraph of what merges and why, and the evidence: review verdict (or "no review
+   ran"), CI state, diff size, and every pending human check from the gate output —
+   confirming acknowledges them. Then: "Merge PR #<pr> into <trunk>?" Do not merge on
+   silence. On no: `gh pr ready <pr> --undo` and stop.
+5. On yes:
+
+```bash
+gh pr merge <pr> --squash --subject "[<id>] <issue title> (#<pr>)" --body-file <file>
+```
+
+Body, from the record:
+
+```
+<goal, one line>
+
+Non-goals: <from Explicitly not>
+Outcome: <what shipped; notable decisions and deviations>
+
+Task: #<id> — docs/tasks/<id>-<slug>.md
+```
+
+`Closes #<id>` in the PR body closes the issue; otherwise `gh issue close <id> --reason completed`.
+
+6. `git fetch --prune`. On the trunk locally, `git merge --ff-only origin/<trunk>`; on
+   any other branch, leave the checkout alone. Never delete a worktree or local branch.
+7. Report the merge commit, whether a cold review ran, and whether the local trunk was
+   fast-forwarded. If the issue has a parent whose children are now all closed, ask
+   whether to close the parent — never automatically.

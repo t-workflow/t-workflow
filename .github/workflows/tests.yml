@@ -1,0 +1,13 @@
+# This repository's own script tests (tests/test.sh). Consumers never receive this file.
+name: tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/test.sh
