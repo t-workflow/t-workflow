@@ -2,6 +2,8 @@
 # Script tests. No network, no gh: everything runs against temporary git repositories.
 # This repository's check 1; never shipped to a consumer.
 set -uo pipefail
+# Fixture commits need an identity; a CI runner has none configured.
+export GIT_AUTHOR_NAME=t-workflow GIT_AUTHOR_EMAIL=tests@t-workflow GIT_COMMITTER_NAME=t-workflow GIT_COMMITTER_EMAIL=tests@t-workflow
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 S="$ROOT/.t-workflow/scripts"
 pass=0; fail=0
