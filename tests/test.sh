@@ -166,14 +166,14 @@ out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || 
 [ "$(grep -c '^check=' "$tmp/c/.t-workflow/config")" = 1 ] && ok || bad "install: update does not duplicate present keys"
 (cd "$tmp/c" && grep -B1 '^# Branch globs' .t-workflow/config | head -1 | grep -q '^$') && ok || bad "install: appended key is separated by a blank line even when the config lacked a trailing newline"
 # a git source: no tag means the newest tag; a tag means that tag
-git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v0.0.1 && git -C "$tmp/src.git" tag v0.0.10 && git -C "$tmp/src.git" tag v0.0.2 && git -C "$tmp/src.git" tag rel/v0.0.3
+git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v9.9.1 && git -C "$tmp/src.git" tag v9.9.10 && git -C "$tmp/src.git" tag v9.9.2 && git -C "$tmp/src.git" tag rel/v9.9.3
 mkdir -p "$tmp/f" && (cd "$tmp/f" && git init -q -b main && git commit -q --allow-empty -m i)
 out=$(bash "$ROOT/install.sh" --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, no tag: $out"
-[ "$(cat "$tmp/f/.t-workflow/VERSION")" = v0.0.10 ] && ok || bad "install: newest tag by version order, got $(cat "$tmp/f/.t-workflow/VERSION")"
-out=$(bash "$ROOT/install.sh" v0.0.2 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, explicit tag: $out"
-[ "$(cat "$tmp/f/.t-workflow/VERSION")" = v0.0.2 ] && has "$out" 'changes from v0.0.10 to v0.0.2' && ok || bad "install: explicit tag and log between tags"
-out=$(bash "$ROOT/install.sh" rel/v0.0.3 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: tag with a slash: $out"
-[ "$(cat "$tmp/f/.t-workflow/VERSION")" = rel/v0.0.3 ] && ok || bad "install: a tag containing / is kept whole, got $(cat "$tmp/f/.t-workflow/VERSION")"
+[ "$(cat "$tmp/f/.t-workflow/VERSION")" = v9.9.10 ] && ok || bad "install: newest tag by version order, got $(cat "$tmp/f/.t-workflow/VERSION")"
+out=$(bash "$ROOT/install.sh" v9.9.2 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, explicit tag: $out"
+[ "$(cat "$tmp/f/.t-workflow/VERSION")" = v9.9.2 ] && has "$out" 'changes from v9.9.10 to v9.9.2' && ok || bad "install: explicit tag and log between tags"
+out=$(bash "$ROOT/install.sh" rel/v9.9.3 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: tag with a slash: $out"
+[ "$(cat "$tmp/f/.t-workflow/VERSION")" = rel/v9.9.3 ] && ok || bad "install: a tag containing / is kept whole, got $(cat "$tmp/f/.t-workflow/VERSION")"
 out=$(bash "$ROOT/install.sh" --from "$ROOT" --dir "$tmp/f" --no-pr 2>&1); has "$out" 'a tag is required' && ok || bad "install: local directory needs a tag"
 out=$(bash "$ROOT/install.sh" --from "file://$tmp/nowhere.git" --dir "$tmp/f" --no-pr 2>&1); has "$out" 'could not list tags' && ok || bad "install: unreachable source reports the real failure, not 'no tags': $out"
 # replace: the old template layout with a manifest and filled slots
@@ -198,6 +198,35 @@ grep -q 'make lint' .t-workflow/REPLACED.md && ! grep -q 'consumer-local skills'
 [ -L CLAUDE.md ] && [ -L .agents/skills ] && ok || bad "replace: aliases restored"
 printf '{"files":{}}' > .template-manifest.json
 out=$(bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/d" --no-pr 2>&1); has "$out" "lists no files" && ok || bad "replace: refuses an empty manifest"
+# the old bootstrap's shape: no manifest, every slot a placeholder, the old files by name
+mkdir -p "$tmp/g/.github/workflows" "$tmp/g/.github/ISSUE_TEMPLATE" "$tmp/g/.claude/skills/t-config" "$tmp/g/.claude/skills/t-work" "$tmp/g/.claude/skills/l-mine" "$tmp/g/.t-workflow/scripts" "$tmp/g/migrations" "$tmp/g/docs/adr" "$tmp/g/docs/adapters" "$tmp/g/docs/architecture" "$tmp/g/docs/tasks/000000" "$tmp/g/docs/own"
+cd "$tmp/g" && git init -q -b main
+printf '# AGENTS.md\n\n## The pipeline\n<!-- local -->\n*(reserved: consumer-local skills)*\n<!-- /local -->\n## Reviewer model\n<!-- local -->\nDefault reviewer model: (none — reviews inherit the invoking session'"'"'s model)\n<!-- /local -->\n## Checks\n<!-- local -->\n1. **(none yet — no stack exists.)** When it does, the command (`npm test`, `cargo test`) is named here.\n<!-- /local -->\n### Documentation-only paths\n<!-- local -->\n*(reserved: this project'"'"'s own documentation-only paths)*\n<!-- /local -->\n## Project notes\n<!-- local -->\n*(reserved: this consumer'"'"'s own session-start instructions)*\n<!-- /local -->\n' > AGENTS.md
+printf '# CONSTITUTION.md\n<!-- local -->\n**Status note:** phase 0.\n<!-- /local -->\n## 3. Protected surfaces\n- `docs/adr/`\n<!-- local -->\n*(reserved: this consumer'"'"'s own protected-path bullets)*\n<!-- /local -->\n## 4. Stack & architecture\n<!-- local -->\n*(reserved: stack and architecture constraints)*\n<!-- /local -->\n' > CONSTITUTION.md
+printf 'node_modules\n# <!-- local -->\n# <!-- /local -->\n' > .gitignore
+echo old > .claude/skills/t-config/SKILL.md; echo old > .claude/skills/t-work/SKILL.md; echo mine > .claude/skills/l-mine/SKILL.md
+echo old > .t-workflow/scripts/protected-paths.sh; echo old > .t-workflow/scripts/check-record.sh; printf 'my-check\n' > .t-workflow/required-checks.local
+printf 'name: CI\n    # <!-- local -->\n    timeout-minutes: 10\n    # <!-- /local -->\n# <!-- local -->\n      - run: make lint\n# <!-- /local -->\n# <!-- local -->\n# <!-- /local -->\n' > .github/workflows/ci.yml; printf 'x\n    # <!-- local -->\n    timeout-minutes: 10\n    # <!-- /local -->\n' > .github/workflows/review-gate.yml; echo mine > .github/workflows/deploy.yml
+echo old > .github/ISSUE_TEMPLATE/task.yml; echo old > .github/ISSUE_TEMPLATE/initiative.yml; echo old > .github/ISSUE_TEMPLATE/config.yml; echo mine > .github/ISSUE_TEMPLATE/bug.yml
+echo v1 > migrations/V1__x.md; echo adr > docs/adr/001-old.md; echo mine > docs/adr/100-mine.md; echo old > docs/workflow.md; echo old > docs/tasks/README.md; echo t > docs/tasks/TEMPLATE.md; echo rec > docs/tasks/000000/12-x.md
+echo old > docs/adapters/TRACKER.md; echo old > docs/architecture/manifest.md; echo mine > docs/architecture/mine.md; echo mine > docs/own/notes.md
+ln -s AGENTS.md CLAUDE.md; ln -s AGENTS.md GEMINI.md; mkdir -p .agents && ln -s ../.claude/skills .agents/skills; ln -s ../AGENTS.md .github/copilot-instructions.md
+git add -A && git commit -qm old
+out=$(bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1) || bad "replace (no manifest): $out"
+has "$out" 'mode: replace' && has "$out" "the old t-workflow's shape" && ok || bad "replace (no manifest): detected by shape, and says so: $out"
+for p in CONSTITUTION.md docs/workflow.md docs/tasks/README.md migrations docs/adr/001-old.md docs/adapters docs/architecture/manifest.md .github/workflows/ci.yml .github/workflows/review-gate.yml .github/ISSUE_TEMPLATE/task.yml .github/ISSUE_TEMPLATE/config.yml .claude/skills/t-config .t-workflow/scripts/protected-paths.sh .t-workflow/required-checks.local; do [ -e "$p" ] && bad "replace (no manifest): old file survived: $p"; done; ok
+for p in .claude/skills/l-mine/SKILL.md .github/workflows/deploy.yml .github/ISSUE_TEMPLATE/bug.yml docs/adr/100-mine.md docs/architecture/mine.md docs/own/notes.md docs/tasks/000000/12-x.md; do [ -e "$p" ] || bad "replace (no manifest): consumer file lost: $p"; done; ok
+[ -f .claude/skills/t-work/SKILL.md ] && grep -q '^name: t-work' .claude/skills/t-work/SKILL.md && ok || bad "replace (no manifest): old t-work replaced by the new one"
+grep -q '^check=""' .t-workflow/config && grep -q '^reviewer_model=""' .t-workflow/config && ok || bad "replace (no manifest): placeholder slots leave config at defaults: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
+head -1 AGENTS.md | grep -q t-workflow && ! grep -q 'reserved' AGENTS.md && ok || bad "replace (no manifest): AGENTS.md rebuilt without placeholders"
+grep -q 'my-check' .t-workflow/REPLACED.md && grep -q 'make lint' .t-workflow/REPLACED.md && ok || bad "replace (no manifest): required-checks.local and the ci slot reported"
+! grep -q 'timeout-minutes' .t-workflow/REPLACED.md && [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 3 ] && ok || bad "replace (no manifest): default timeouts and empty slots are not reported (status note, ci slot, required-checks expected): $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
+[ -L CLAUDE.md ] && [ -L .github/copilot-instructions.md ] && [ -L .agents/skills ] && ok || bad "replace (no manifest): aliases kept"
+grep -q '^node_modules$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace (no manifest): gitignore kept, markers stripped"
+out=$(bash "$ROOT/install.sh" v4 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1); has "$out" 'mode: update' && ok || bad "after replace, the next run is an update: $out"
+mkdir -p "$tmp/h/.t-workflow/scripts" && cd "$tmp/h" && git init -q -b main && printf '# C\n## 3. Protected surfaces\n<!-- local -->\n*(reserved: bullets)*\n<!-- /local -->\n' > CONSTITUTION.md && echo old > .t-workflow/scripts/protected-paths.sh && printf '# A\n## Project notes\n<!-- local -->\n*(reserved: notes)*\n<!-- /local -->\n' > AGENTS.md && git add -A && git commit -qm old
+bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/h" --no-pr >/dev/null 2>&1 || bad "replace (placeholders only)"
+[ ! -e "$tmp/h/.t-workflow/REPLACED.md" ] && ok || bad "replace: no REPLACED.md when every slot was a placeholder"
 
 echo "# ci.sh (offline parts)"
 mkdir -p "$tmp/e" && (cd "$tmp/e" && git init -q -b main && echo base > base.txt && git add -A && git commit -qm init && git clone -q --bare . "$tmp/e-origin" && git remote add origin "$tmp/e-origin" && git fetch -q origin)
