@@ -5,7 +5,7 @@
 #   issue.sh blockers <id>      JSON [{number,state,stateReason,title}]
 #   issue.sh open-blockers <id> blockers not closed as completed, one per line (exit 1 when any)
 #   issue.sh children <id>      JSON [{number,title,state}]
-#   issue.sh blocking <id>      JSON: issues this one blocks
+#   issue.sh blocking <id>      JSON [{number,title,state}]: issues this one blocks
 #   issue.sh ensure-label <name> [color] [description]
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -22,8 +22,8 @@ case "$cmd" in
     printf '%s\n' "$body" | section Plan ;;
   blockers) blockers_json "$id" ;;
   open-blockers) open_blockers "$id" ;;
-  children) gh issue view "$id" --json subIssues --jq '[.subIssues[] | {number,title,state}]' ;;
-  blocking) gh issue view "$id" --json blocking --jq '.blocking' ;;
+  children) gh issue view "$id" --json subIssues --jq '[.subIssues.nodes[]? | {number,title,state}]' ;;
+  blocking) gh issue view "$id" --json blocking --jq '[.blocking.nodes[]? | {number,title,state}]' ;;
   ensure-label)
     gh label list --limit 200 --json name -q '.[].name' | grep -qx "$id" \
       || gh label create "$id" --color "${3:-ededed}" --description "${4:-}" ;;
