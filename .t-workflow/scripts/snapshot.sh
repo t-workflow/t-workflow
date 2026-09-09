@@ -17,8 +17,8 @@ review)
   diff=$(gh pr diff "$pr")
   clean=true; [ -z "$(git status --porcelain | grep -v '^??')" ] || clean=false
   jq -n --argjson issue "$issue" --arg plan "$plan" --argjson pr "$prv" --arg diff "$diff" \
-        --arg head "$(git rev-parse HEAD)" --argjson clean "$clean" \
-        '{issue: $issue, plan: $plan, pr: $pr, diff: $diff, local: {head: $head, clean: $clean}}' ;;
+        --arg head "$(git rev-parse HEAD)" --arg branch "$(git branch --show-current)" --argjson clean "$clean" \
+        '{issue: $issue, plan: $plan, pr: $pr, diff: $diff, local: {head: $head, branch: $branch, clean: $clean}}' ;;
 
 status)
   issues=$(gh issue list --state open --limit 200 --json number,title,labels,blockedBy,parent \

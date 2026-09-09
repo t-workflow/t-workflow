@@ -58,5 +58,7 @@ readiness: ready | not-ready
 outcome: say `ready` plainly. Anything that deserves its own issue is a recommendation
 in the body, never an issue you open.
 
-6. Stop. Do not fix, mark ready, or merge. A pass after a fix pass is scoped: verify the
+6. `.t-workflow/scripts/rerun-ci.sh <pr>` — the CI run for this commit was red only
+   because no review existed; re-running it is what turns it green. Say what it did.
+7. Stop. Do not fix, mark ready, or merge. A pass after a fix pass is scoped: verify the
    named findings, inspect what the fixes touched, re-run only the checks they falsify.

@@ -3,6 +3,13 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-09 — One CI run per commit; the review re-runs it
+
+A protected diff's CI run is red until its cold review exists. Triggering a second run
+from the review event left two runs at one commit, and branch protection counted the
+red one, so every protected merge needed a hand re-run. Now the workflow fires only on
+pull-request events and `/t-review` re-runs the existing run after posting.
+
 ## 2026-09-08 — A release is a tag; the tree never names a version
 
 The README installs from `main` and the installer resolves the newest tag. There is no

@@ -44,10 +44,14 @@ match_any() {
   return 1
 }
 
-# section <heading> < markdown: the body of the first '## <heading>' section.
+# section <heading> < markdown: the body of the first '## <heading>' section. Carriage
+# returns (a review typed in GitHub's web editor) and trailing spaces on the heading are
+# ignored, so a section is never silently missed.
 section() {
   awk -v h="## $1" '
-    $0 == h { on = 1; next }
+    { sub(/\r$/, "") }
+    { t = $0; sub(/[[:space:]]+$/, "", t) }
+    t == h { on = 1; next }
     /^## / { if (on) exit }
     on { print }'
 }
@@ -88,11 +92,13 @@ open_blockers() {
 
 # review_verdict <reviews-json> <head-committed-at>: reads the latest review and prints
 #   verdict: ready|not-ready|none   isolation: <line or none>   fresh: yes|no
-# followed by the review's "## Pending human checks" section (or "none").
+# followed by the review's "## Pending human checks" section (or "none"), then its
+# medium and low findings ("open-findings:"), which do not block but are restated at the
+# merge gate so confirming means the human saw them.
 review_verdict() {
   local reviews="$1" head_time="$2" latest body at
   latest=$(printf '%s' "$reviews" | jq -c 'map(select(.body | test("readiness: *(ready|not-ready)"))) | sort_by(.submittedAt) | last // empty')
-  if [ -z "$latest" ]; then echo "verdict: none"; echo "isolation: none"; echo "fresh: no"; echo "pending: none"; return; fi
+  if [ -z "$latest" ]; then echo "verdict: none"; echo "isolation: none"; echo "fresh: no"; echo "pending: none"; echo "open-findings: none"; return; fi
   body=$(printf '%s' "$latest" | jq -r .body)
   at=$(printf '%s' "$latest" | jq -r .submittedAt)
   echo "verdict: $(printf '%s' "$body" | grep -oE 'readiness: *(ready|not-ready)' | tail -1 | sed 's/readiness: *//')"
@@ -101,4 +107,9 @@ review_verdict() {
   local pending
   pending=$(printf '%s\n' "$body" | section "Pending human checks" | sed '/^readiness:/,$d' | grep -v '^[[:space:]]*$' || true)
   if [ -z "$pending" ]; then echo "pending: unknown"; else echo "pending:"; printf '%s\n' "$pending" | sed 's/^/  /'; fi
+  local findings
+  findings=$(printf '%s\n' "$body" | section "Findings" | awk '
+    /^### /{ sev = tolower($0); sub(/^### */, "", sev); sub(/[[:space:]]+$/, "", sev); next }
+    (sev == "medium" || sev == "low") && /^- / && tolower($0) !~ /^- *\(?none\)?\.? *$/ { print "  " sev ": " substr($0, 3) }')
+  if [ -z "$findings" ]; then echo "open-findings: none"; else echo "open-findings:"; printf '%s\n' "$findings"; fi
 }
