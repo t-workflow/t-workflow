@@ -18,8 +18,10 @@ Read `.t-workflow/AGENTS.md`.
 3. Do not edit anything. A defect noticed here is a finding for the report, not a fix.
 4. **Ask the human to confirm**, last thing in the message, with the PR URL, one plain
    paragraph of what merges and why, and the evidence: review verdict (or "no review
-   ran"), CI state, diff size, and every pending human check from the gate output —
-   confirming acknowledges them. Then: "Merge PR #<pr> into <trunk>?" Do not merge on
+   ran"), CI state, diff size, every pending human check, and every medium and low
+   finding still open from the gate's `review-open-findings` lines, each in one plain
+   sentence — confirming acknowledges them all; a human who wants one fixed first
+   answers no and names it for `/t-work <id>`. Then: "Merge PR #<pr> into <trunk>?" Do not merge on
    silence. On no: `gh pr ready <pr> --undo` and stop.
 5. On yes:
 

@@ -94,9 +94,15 @@ echo "# lib.sh helpers"
 printf '## A\none\n## Plan\nallowed\n\n## B\nb\n' | section Plan | grep -q '^allowed$' && ok || bad "section extracts a body"
 [ "$(printf '## Plan\n## Plan\n' | count_sections Plan)" = 2 ] && ok || bad "count_sections"
 reviews='[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Pending human checks\n- none\nreadiness: ready"},{"submittedAt":"2026-01-02T00:00:00Z","body":"isolation: fresh session\nreadiness: not-ready"}]'
+rv0=$(review_verdict '[]' "")
 rvp=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Findings\n- x\n## Pending human checks\n- check the colours\nreadiness: ready"}]' "")
 has "$rvp" '^  - check the colours$' && ok || bad "review_verdict: pending checks listed"
 printf '%s' "$rvp" | grep -q 'readiness' && bad "review_verdict: readiness line leaks into pending checks" || ok
+rvf=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Checks\n- ran: x\n## Findings\n### High\n- broken thing at a.sh:3\n### Medium\n- odd wording at b.md:1\n### Low\n- none\n- nit one\n- nit two\n## Pending human checks\n- none\nreadiness: not-ready"}]' "")
+has "$rvf" '^  medium: odd wording at b.md:1$' && has "$rvf" '^  low: nit two$' && ok || bad "review_verdict: lists medium and low findings: $rvf"
+printf '%s' "$rvf" | grep -q 'broken thing' && bad "review_verdict: a high finding is not an open finding (it blocks instead)" || ok
+printf '%s' "$rvf" | grep -q 'low: none' && bad "review_verdict: a '- none' entry is not a finding" || ok
+has "$rv0" '^open-findings: none$' && ok || bad "review_verdict: no review means no open findings"
 rv=$(review_verdict "$reviews" "2026-01-01T12:00:00Z"); rv3=$(review_verdict "$reviews" "2026-01-03T00:00:00Z"); rv0=$(review_verdict '[]' "")
 has "$rv" '^verdict: not-ready$' && ok || bad "review_verdict: latest wins"
 has "$rv3" '^fresh: no$' && ok || bad "review_verdict: stale when head is newer"
