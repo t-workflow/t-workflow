@@ -24,3 +24,4 @@ Nothing in this repository names its own version, and a release is just a tag. T
 ## Deviations / notes
 - Issue #3 (rename to v0.0.1) was opened before this direction was settled and closed as superseded by this task, at the human's redirection (confirmed 2026-09-09).
 - Fix pass after the cold review (all six low findings, at the human's ask): README shows the pinned install form; tag listing failures surface git's own error instead of "no tags"; the source is a partial clone (`--filter=blob:none`) so the log between tags works without a full download; a tag containing `/` is kept whole; a config lacking a trailing newline gets one before a key is appended; the gate no longer prints the review's `readiness:` line inside the pending human checks.
+- Second fix pass: the README's pinned example had used a literal `v0.3.0`, reintroducing a version into the tree (caught by the scoped re-review); it now shows `<tag>`.
