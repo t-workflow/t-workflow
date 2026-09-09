@@ -67,8 +67,7 @@ elif printf '%s' "$existing" | jq -e '.required_status_checks == null' >/dev/nul
           require_code_owner_reviews: (.require_code_owner_reviews // false),
           required_approving_review_count: (.required_approving_review_count // 0),
           require_last_push_approval: (.require_last_push_approval // false)
-        } + (if .dismissal_restrictions and ((.dismissal_restrictions.users // []) + (.dismissal_restrictions.teams // []) + (.dismissal_restrictions.apps // []) | length > 0)
-             then {dismissal_restrictions: (.dismissal_restrictions | people)} else {} end)
+        } + (if .dismissal_restrictions then {dismissal_restrictions: (.dismissal_restrictions | people)} else {} end)
           + (if .bypass_pull_request_allowances then {bypass_pull_request_allowances: (.bypass_pull_request_allowances | people)} else {} end))
         else null end),
       restrictions: (if .restrictions then (.restrictions | people) else null end),
