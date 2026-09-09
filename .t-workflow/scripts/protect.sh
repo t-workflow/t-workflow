@@ -5,7 +5,10 @@
 # With existing branch protection, only the required-checks list changes: the given
 # contexts are removed and added, `t-workflow` is always present, and every other
 # rule (reviews, admin enforcement, restrictions) stays exactly as it was. With no
-# protection, the minimal set is applied. Reports what the plan refused.
+# protection at all (a confirmed 404), the minimal set is applied. Any other failure
+# to read the protection stops the script without writing anything.
+#   exit 0 = done, or not available on this plan (said); 1 = a write failed;
+#   2 = the protection could not be read.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 remove=(); add=()
@@ -23,29 +26,55 @@ if gh api -X PATCH "repos/$nwo" -F delete_branch_on_merge=true -F allow_squash_m
   echo "OK: squash merges only, merged branches deleted"
 else echo "FAIL: could not change merge settings"; fi
 
-existing=$(gh api "repos/$nwo/branches/$trunk/protection" 2>/tmp/protect.err); rc=$?
+# Read the existing protection; the HTTP status decides what happens next.
+err=$(mktemp); trap 'rm -f "$err"' EXIT
+existing=$(gh api "repos/$nwo/branches/$trunk/protection" 2>"$err"); rc=$?
+status=$(grep -oE 'HTTP [0-9]{3}' "$err" | head -1 | awk '{print $2}')
 if [ "$rc" -ne 0 ]; then
-  if grep -q '403' /tmp/protect.err; then
-    echo "FAIL: branch protection is not available on this repository (a private repository needs a paid plan); the rule holds by convention"; rm -f /tmp/protect.err; exit 0
-  fi
-  rm -f /tmp/protect.err
-  # 404: the branch is not protected yet — apply the minimal set.
-  if gh api -X PUT "repos/$nwo/branches/$trunk/protection" --input - >/dev/null <<JSON
+  case "$status" in
+    403) echo "FAIL: branch protection is not available on this repository (a private repository needs a paid plan); the rule holds by convention"; exit 0 ;;
+    404)
+      if gh api -X PUT "repos/$nwo/branches/$trunk/protection" --input - >/dev/null <<JSON
 {"required_status_checks":{"strict":false,"contexts":["t-workflow"]},
  "enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,
  "allow_force_pushes":false,"allow_deletions":false}
 JSON
-  then echo "OK: $trunk protected — PRs only, 't-workflow' check required, no force pushes"
-  else echo "FAIL: branch protection not applied"; exit 1; fi
-  exit 0
+      then echo "OK: $trunk protected — PRs only, 't-workflow' check required, no force pushes"; exit 0
+      else echo "FAIL: branch protection not applied"; exit 1; fi ;;
+    *) echo "FAIL: could not read the branch protection (HTTP ${status:-unknown}); nothing was changed:"; sed 's/^/  /' "$err"; exit 2 ;;
+  esac
 fi
-rm -f /tmp/protect.err
+
 before=$(printf '%s' "$existing" | jq -r '.required_status_checks.contexts[]?')
 strict=$(printf '%s' "$existing" | jq -r '.required_status_checks.strict // false')
 echo "required checks before: $(printf '%s' "$before" | tr '\n' ' ')"
-new=$( { printf '%s\n' "$before"; printf '%s\n' t-workflow "${add[@]}"; } | grep . | awk '!seen[$0]++' )
-for r in "${remove[@]}"; do new=$(printf '%s\n' "$new" | grep -vx -- "$r" || true); done
+new=$( { printf '%s\n' "$before"; printf '%s\n' t-workflow ${add[@]+"${add[@]}"}; } | grep . | awk '!seen[$0]++' )
+for r in ${remove[@]+"${remove[@]}"}; do new=$(printf '%s\n' "$new" | grep -vxF -- "$r" || true); done
 body=$(printf '%s\n' "$new" | grep . | jq -R . | jq -sc --argjson strict "$strict" '{strict: $strict, contexts: .}')
-if printf '%s' "$body" | gh api -X PATCH "repos/$nwo/branches/$trunk/protection/required_status_checks" --input - >/dev/null; then
+if printf '%s' "$body" | gh api -X PATCH "repos/$nwo/branches/$trunk/protection/required_status_checks" --input - >/dev/null 2>"$err"; then
   echo "OK: required checks now: $(printf '%s' "$new" | tr '\n' ' ')— every other protection rule left as it was"
-else echo "FAIL: could not update the required checks"; exit 1; fi
+elif printf '%s' "$existing" | jq -e '.required_status_checks == null' >/dev/null; then
+  # Protection exists but has no required-checks rule yet (a reviews-only rule): the
+  # sub-resource cannot be patched until it is enabled, so re-send the protection with
+  # every existing rule carried over and the required checks added.
+  full=$(printf '%s' "$existing" | jq -c --argjson rsc "$body" '{
+      required_status_checks: $rsc,
+      enforce_admins: (.enforce_admins.enabled // false),
+      required_pull_request_reviews: (if .required_pull_request_reviews then {
+          dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
+          require_code_owner_reviews: (.required_pull_request_reviews.require_code_owner_reviews // false),
+          required_approving_review_count: (.required_pull_request_reviews.required_approving_review_count // 0),
+          require_last_push_approval: (.required_pull_request_reviews.require_last_push_approval // false)
+        } else null end),
+      restrictions: (if .restrictions then {
+          users: [.restrictions.users[]?.login], teams: [.restrictions.teams[]?.slug], apps: [.restrictions.apps[]?.slug]
+        } else null end),
+      allow_force_pushes: (.allow_force_pushes.enabled // false),
+      allow_deletions: (.allow_deletions.enabled // false),
+      required_linear_history: (.required_linear_history.enabled // false),
+      required_conversation_resolution: (.required_conversation_resolution.enabled // false)
+    }')
+  if printf '%s' "$full" | gh api -X PUT "repos/$nwo/branches/$trunk/protection" --input - >/dev/null; then
+    echo "OK: required checks enabled: $(printf '%s' "$new" | tr '\n' ' ')— the existing rules carried over"
+  else echo "FAIL: could not enable required checks on the existing protection"; exit 1; fi
+else echo "FAIL: could not update the required checks:"; sed 's/^/  /' "$err"; exit 1; fi

@@ -14,11 +14,10 @@ From the trunk branch of a clean checkout, with `gh` authenticated:
 curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/main/install.sh | bash
 ```
 
-That installs the newest tag. Branch protection, when the repository has any, keeps
-every rule it had; only the required-checks list changes, to include `t-workflow`.
-To pin one, append it:
-`… | bash -s -- <tag>`. It opens an issue, a branch, and a pull request that adds t-workflow, and sets
-branch protection. Review the PR — in particular the detected check command in
+That installs the newest tag; to pin one, append it:
+`… | bash -s -- <tag>`. It opens an issue, a branch, and a pull request that adds
+t-workflow, and sets branch protection: a repository that already has protection keeps
+every rule it had, and only the required-checks list changes to include `t-workflow`. Review the PR — in particular the detected check command in
 `.t-workflow/config` — and merge it. The workflow is in force from then on.
 
 Options: `--check "<cmd>"` to name the build/test command, `--no-protect` to leave

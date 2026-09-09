@@ -212,8 +212,9 @@ if [ "$mode" = replace ]; then
           else old_docs=$(printf '%s' "$buf" | grep -oE '`[^`]+`' | tr -d '`' | tr '\n' ' ' || true); fi ;;
         agents:"## The pipeline")
           old_skill_rows=$(printf '%s' "$buf" | grep -E '^\| `/' || true)
-          if [ -z "$old_skill_rows" ]; then
-            { echo; echo "## $f — $h"; echo; echo '```'; printf '%s\n' "$buf"; echo '```'; } >> "$report"; report_used=yes
+          rest=$(printf '%s' "$buf" | grep -vE '^\| `/|^\| Skill \| Stage \|$|^\|---\|---\|$|^[[:space:]]*$' || true)
+          if [ -n "$rest" ]; then
+            { echo; echo "## $f — $h (text beside the skill rows)"; echo; echo '```'; printf '%s\n' "$rest"; echo '```'; } >> "$report"; report_used=yes
           fi ;;
         agents:"## Reviewer model") old_model=$(printf '%s' "$buf" | sed -n 's/^Default reviewer model: *//p' | grep -v '^(none' | head -1 || true) ;;
         agents:"## Project notes") old_notes="$buf" ;;
@@ -295,7 +296,7 @@ if [ -n "${old_ci_steps:-}" ]; then
             else if (instep) { step = step l "\n"; if (l ~ /\.t-workflow\/scripts\//) drop = 1 }
             else { lead = lead l "\n" }
           }
-          flush()
+          flush(); if (lead != "") printf "%s", lead   # a trailing comment with no step after it is kept
         }
         function flush() { if (step != "") { if (!drop) printf "%s%s", lead, step; lead = ""; step = ""; drop = 0; instep = 0 } }' | sed 's/^/      /'
     } > .github/workflows/build.yml
@@ -430,7 +431,7 @@ fi
 rm -f "$prbody"
 if [ "$protect" = yes ] && [ "$mode" != update ]; then
   pflags=(); [ "$mode" = replace ] && pflags+=(--remove checks --remove cold-review); [ "${wrote_build:-}" = yes ] && pflags+=(--add build)
-  .t-workflow/scripts/protect.sh "${pflags[@]}" || true
+  .t-workflow/scripts/protect.sh ${pflags[@]+"${pflags[@]}"} || true
 fi
 note ""
 note "PR: $prurl"
