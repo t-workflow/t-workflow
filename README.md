@@ -14,7 +14,8 @@ From the trunk branch of a clean checkout, with `gh` authenticated:
 curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/main/install.sh | bash
 ```
 
-That installs the newest tag (pass a tag to pin one), opens an issue, a branch, and a pull request that adds t-workflow, and sets
+That installs the newest tag. To pin one, append it:
+`… | bash -s -- v0.3.0`. It opens an issue, a branch, and a pull request that adds t-workflow, and sets
 branch protection. Review the PR — in particular the detected check command in
 `.t-workflow/config` — and merge it. The workflow is in force from then on.
 

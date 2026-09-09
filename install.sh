@@ -52,8 +52,9 @@ done
 source="${from:-$SOURCE_URL}"
 if [ -z "$tag" ]; then
   [ -d "$source" ] && die "a tag is required with a local directory source"
-  tag=$(git ls-remote --tags --refs "$source" 2>/dev/null | sed 's#.*/##' | sort -V | tail -1)
-  [ -n "$tag" ] || die "no tags found at $source; pass one explicitly"
+  refs=$(git ls-remote --tags --refs "$source") || die "could not list tags at $source (see the error above)"
+  tag=$(printf '%s\n' "$refs" | sed 's#^[0-9a-f]*[[:space:]]*refs/tags/##' | sort -V | tail -1)
+  [ -n "$tag" ] || die "no tags at $source; pass one explicitly"
 fi
 
 cd "$dir" || die "no such directory: $dir"
@@ -81,7 +82,9 @@ if [ -d "$source" ]; then
   cp -R "$source"/. "$src"/
 else
   note "source: $source at $tag"
-  git clone -q --branch "$tag" "$source" "$src" || die "could not clone $tag"
+  # Partial clone: full commit history (for the log between tags) but file contents
+  # only for the tag checked out. A server without filter support falls back to a full clone.
+  git clone -q --filter=blob:none --branch "$tag" "$source" "$src" || die "could not clone $tag"
 fi
 [ -f "$src/.t-workflow/AGENTS.md" ] || die "the source does not look like t-workflow"
 if [ "$mode" = update ] && [ -d "$src/.git" ]; then
@@ -246,6 +249,7 @@ if [ ! -f .t-workflow/config ]; then
 else
   # A release may add a key: append what this config lacks, with its comment, leaving present values alone.
   def=$(mktemp); default_config > "$def"
+  [ -z "$(tail -c1 .t-workflow/config)" ] || echo >> .t-workflow/config   # end with a newline before appending
   for key in $(grep -oE '^[a-z_]+=' "$def" | tr -d =); do
     grep -q "^$key=" .t-workflow/config && continue
     awk -v k="$key=" '/^#/{b=b $0 "\n"; next} index($0,k)==1{printf "\n%s%s\n", b, $0; exit} {b=""}' "$def" >> .t-workflow/config
