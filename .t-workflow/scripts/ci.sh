@@ -35,7 +35,7 @@ else
     # Title
     printf '%s' "$PR_TITLE" | grep -qE "^\[$id\] ." && ok "title starts with [$id]" || fail "PR title must start with '[$id] '"
     # Issue: plan and blockers
-    body=$(gh issue view "$id" --json body -q .body 2>/dev/null) || { fail "cannot read issue #$id"; body=""; }
+    if raw=$(gh issue view "$id" --json body -q .body 2>/dev/null); then body=$(printf '%s\n' "$raw" | normalize); else fail "cannot read issue #$id"; body=""; fi
     plans=$(printf '%s\n' "$body" | count_sections Plan)
     if prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh"); then
       echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"

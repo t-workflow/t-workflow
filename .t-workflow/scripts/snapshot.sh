@@ -11,7 +11,7 @@ review)
   id="${2:-}"; [ -n "$id" ] || die "usage: snapshot.sh review <id>"
   pr=$(pr_for_task "$id" all) || { [ $? -eq 3 ] && die "more than one PR for #$id: $(printf '%s' "$pr" | tr '\n' ' ')"; die "no PR for #$id"; }
   issue=$(gh issue view "$id" --json number,title,state,labels,body,parent --jq '. + {labels: [.labels[].name], parent: (.parent.number // null)}')
-  plan=$(printf '%s' "$issue" | jq -r .body | section Plan)
+  plan=$(printf '%s' "$issue" | jq -r .body | normalize | section Plan)
   prv=$(gh pr view "$pr" --json number,url,title,body,isDraft,headRefOid,headRefName,baseRefName,files,reviews,commits \
         --jq '{number,url,title,isDraft,headRefOid,headRefName,baseRefName,files: [.files[].path],reviews, head_time: .commits[-1].committedDate, checks_run: (.body | capture("## Checks run\n(?<c>(.|\n)*?)(\n## |$)").c? // "")}')
   diff=$(gh pr diff "$pr")

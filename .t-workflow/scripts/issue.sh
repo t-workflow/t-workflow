@@ -15,7 +15,7 @@ case "$cmd" in
   view) gh issue view "$id" --json number,title,state,stateReason,labels,body,parent,url \
           --jq '. + {labels: [.labels[].name], parent: (.parent.number // null)}' ;;
   plan)
-    body=$(gh issue view "$id" --json body -q .body)
+    body=$(gh issue view "$id" --json body -q .body | normalize)
     n=$(printf '%s\n' "$body" | count_sections Plan)
     [ "$n" -eq 0 ] && exit 1
     [ "$n" -gt 1 ] && { echo "more than one '## Plan' section" >&2; exit 3; }

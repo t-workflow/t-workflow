@@ -22,7 +22,7 @@ case "$cmd" in
     if [ -n "$f" ]; then echo "${f#"$TW_ROOT"/}"; exit 0; fi
     json=$(gh issue view "$id" --json title,body,parent) || die "could not read issue #$id"
     title=$(printf '%s' "$json" | jq -r .title)
-    body=$(printf '%s' "$json" | jq -r .body)
+    body=$(printf '%s' "$json" | jq -r .body | normalize)
     parent=$(printf '%s' "$json" | jq -r '.parent.number // empty')
     slug=$(slugify "$title")
     out="$TW_ROOT/docs/tasks/$id-$slug.md"

@@ -98,6 +98,14 @@ rvp=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: 
 has "$rvp" '^  - check the colours$' && ok || bad "review_verdict: pending checks listed"
 printf '%s' "$rvp" | grep -q 'readiness' && bad "review_verdict: readiness line leaks into pending checks" || ok
 rv0=$(review_verdict '[]' "")
+# a CRLF body must yield exactly what the LF body yields
+lfbody='isolation: fresh session\n## Findings\n### Medium\n- m at x:1\n### Low\n- none\n## Pending human checks\n- p\nreadiness: ready\n'
+crlfbody=$(printf '%s' "$lfbody" | sed 's/\\n/\\r\\n/g')
+lf=$(review_verdict "[{\"submittedAt\":\"2026-01-01T00:00:00Z\",\"body\":\"$lfbody\"}]" ""); cr=$(review_verdict "[{\"submittedAt\":\"2026-01-01T00:00:00Z\",\"body\":\"$crlfbody\"}]" "")
+[ "$lf" = "$cr" ] && has "$lf" '^  medium: m at x:1$' && has "$lf" '^isolation: fresh session$' && ok || bad "review_verdict: CRLF and LF bodies differ:\n$lf\n---\n$cr"
+printf '%s' "$cr" | grep -q $'\r' && bad "review_verdict: a carriage return leaked into the output" || ok
+nof=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Pending human checks\n- none\nreadiness: ready"}]' "")
+has "$nof" '^open-findings: unknown$' && ok || bad "review_verdict: a review with no Findings section is unknown, not none: $nof"
 crlf=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: fresh session\r\n## Findings\r\n### Medium \r\n- (none)\r\n- typed on the web at c.md:2\r\n### Low\r\n- none\r\n## Pending human checks\r\n- try it on a phone\r\nreadiness: ready\r\n"}]' "")
 has "$crlf" '^  medium: typed on the web at c.md:2' && ok || bad "review_verdict: CRLF body and a trailing space on the heading still yield the findings: $crlf"
 has "$crlf" '^  - try it on a phone' && ok || bad "review_verdict: CRLF body still yields pending checks: $crlf"
@@ -113,6 +121,26 @@ has "$rv3" '^fresh: no$' && ok || bad "review_verdict: stale when head is newer"
 has "$rv" '^fresh: yes$' && ok || bad "review_verdict: fresh"
 has "$rv" '^pending: unknown$' && ok || bad "review_verdict: missing pending section is unknown"
 has "$rv0" '^verdict: none$' && ok || bad "review_verdict: none"
+
+echo "# review_blocks (the ship gate's review rules)"
+rb() { printf '%s\n' "$2" | review_blocks "$1" 9 2>&1; }
+ready='verdict: ready\nisolation: subagent\nfresh: yes\npending:\n  - none\nopen-findings: none'
+out=$(rb yes "$(printf "$ready")") && [ -z "$out" ] && ok || bad "review_blocks: a fresh ready review passes a protected diff: $out"
+out=$(rb yes "$(printf 'verdict: none\nisolation: none\nfresh: no\npending: none\nopen-findings: none')"); has "$out" 'no cold review' && ok || bad "review_blocks: protected with no review blocks: $out"
+out=$(rb no "$(printf 'verdict: none\nisolation: none\nfresh: no\npending: none\nopen-findings: none')") && [ -z "$out" ] && ok || bad "review_blocks: unprotected with no review passes: $out"
+out=$(rb no "$(printf "$ready" | sed 's/ready/not-ready/')"); has "$out" 'not-ready' && ok || bad "review_blocks: not-ready blocks even unprotected: $out"
+out=$(rb yes "$(printf "$ready" | sed 's/fresh: yes/fresh: no/')"); has "$out" 'older than the head' && ok || bad "review_blocks: stale review blocks protected: $out"
+out=$(rb no "$(printf "$ready" | sed 's/fresh: yes/fresh: no/')") && has "$out" '^note: the ready review predates' && ok || bad "review_blocks: stale review is a note when unprotected: $out"
+out=$(rb yes "$(printf "$ready" | sed 's/isolation: subagent/isolation: same session (tiny)/')"); has "$out" 'same session' && ok || bad "review_blocks: same-session blocks protected: $out"
+out=$(rb no "$(printf "$ready" | sed 's/isolation: subagent/isolation: same session (tiny)/')") && [ -z "$out" ] && ok || bad "review_blocks: same-session passes unprotected: $out"
+out=$(rb no "$(printf "$ready" | sed '/^pending:/,/^  - none/d; s/^open-findings/pending: unknown\nopen-findings/')"); has "$out" 'no .## Pending human checks. section' && ok || bad "review_blocks: unknown pending blocks: $out"
+out=$(rb no "$(printf "$ready" | sed 's/open-findings: none/open-findings: unknown/')"); has "$out" 'no .## Findings. section' && ok || bad "review_blocks: unknown findings block: $out"
+out=$(rb yes "$(printf 'verdict: none\nisolation: none\nfresh: no\npending: unknown\nopen-findings: unknown')"); printf '%s' "$out" | grep -q 'section' && bad "review_blocks: unknown sections do not apply when there is no review" || ok
+u=$("$S/gate.sh" 2>&1); has "$u" 'exit 0 = proceed' && ! has "$u" 'set -uo' && ok || bad "gate.sh: usage prints the whole header and nothing else: $u"
+echo "# bodies are normalised at entry"
+printf '# 7 — X\r\nIssue: #7\r\n\r\n## Asked\r\nA.\r\n\r\n## Done when\r\nB.\r\n\r\n## Explicitly not\r\nnone\r\n\r\n## Decisions made along the way\r\n- none\r\n\r\n## Deviations / notes\r\n- none\r\n' > "$tmp/a/docs/tasks/7-crlf.md"
+[ "$(printf '## Plan\r\n## Plan \r\n' | count_sections Plan)" = 2 ] && ok || bad "count_sections: CRLF headings counted"
+[ "$(printf '## A\r\nx  \r\n' | normalize | od -c | grep -c '\\r')" = 0 ] && ok || bad "normalize strips carriage returns"
 
 echo "# install.sh"
 mk_repo "$tmp/b" && ok || bad "install: adopt"
