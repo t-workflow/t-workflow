@@ -183,11 +183,11 @@ out=$(bash "$ROOT/install.sh" --from "file://$tmp/nowhere.git" --dir "$tmp/f" --
 # replace: the old template layout with a manifest and filled slots
 mkdir -p "$tmp/d/.github/workflows" "$tmp/d/.claude/skills/t-config" "$tmp/d/.claude/skills/l-mine" "$tmp/d/.t-workflow/scripts" "$tmp/d/migrations" "$tmp/d/docs/adr" "$tmp/d/docs/tasks/000100"
 cd "$tmp/d" && git init -q -b main
-printf '# AGENTS.md\n\n## The pipeline\n<!-- local -->\n*(reserved: consumer-local skills — get a row here,\nonce added.)*\n<!-- /local -->\n## Reviewer model\n<!-- local -->\nDefault reviewer model: opus\n<!-- /local -->\n## Checks\n<!-- local -->\n1. `make test` — the build\n<!-- /local -->\n### Documentation-only paths\n<!-- local -->\n- `site/**`\n<!-- /local -->\n## Project notes\n<!-- local -->\nUse rubocop.\n<!-- /local -->\n' > AGENTS.md
+printf '# AGENTS.md\n\n## The pipeline\n<!-- local -->\n| Skill | Stage |\n|---|---|\n| `/l-mine` | Does my thing. |\n<!-- /local -->\n## Reviewer model\n<!-- local -->\nDefault reviewer model: opus\n<!-- /local -->\n## Checks\n<!-- local -->\n1. `make test` — the build\n<!-- /local -->\n### Documentation-only paths\n<!-- local -->\n- `site/**`\n<!-- /local -->\n## Project notes\n<!-- local -->\nUse rubocop.\n<!-- /local -->\n' > AGENTS.md
 printf '# CONSTITUTION.md\n<!-- local -->\n**Status note:** phase 0.\n<!-- /local -->\n## 3. Protected surfaces\n- `docs/adr/`\n<!-- local -->\n- `db/migrate/`\n<!-- /local -->\n## 4. Stack & architecture\n<!-- local -->\n- Rails only.\n<!-- /local -->\n' > CONSTITUTION.md
 printf 'node_modules\n# <!-- local -->\n.env\n# <!-- /local -->\n' > .gitignore
 echo old > .claude/skills/t-config/SKILL.md; echo mine > .claude/skills/l-mine/SKILL.md; echo old > .t-workflow/scripts/x.sh
-printf 'name: CI\n# <!-- local -->\n      - uses: actions/setup-java@v4\n        if: "!cancelled()"\n        with:\n          java-version: 21\n      - run: make lint\n# a column-zero comment\n      - name: Build\n        if: "!cancelled() && steps.docs-only.outputs.docs_only != '"'"'true'"'"'"\n        run: make test\n# <!-- /local -->\n' > .github/workflows/ci.yml
+printf 'name: CI\n# <!-- local -->\n      - uses: actions/setup-java@v4\n        if: "!cancelled()"\n        with:\n          java-version: 21\n      - run: make lint\n      # the manifest lock, an old-template step\n      - name: Template-owned files match the pinned manifest\n        if: "!cancelled()"\n        run: ./.t-workflow/scripts/check-manifest.sh\n# a column-zero comment\n      - name: Build\n        if: "!cancelled() && steps.docs-only.outputs.docs_only != '"'"'true'"'"'"\n        run: make test\n# <!-- /local -->\n' > .github/workflows/ci.yml
 echo v1 > migrations/V1__x.md; echo adr > docs/adr/001-old.md; echo mine > docs/adr/100-mine.md; echo rec > docs/tasks/000100/101-x.md; echo t > docs/tasks/TEMPLATE.md
 ln -s AGENTS.md CLAUDE.md; mkdir -p .agents && ln -s ../.claude/skills .agents/skills
 printf '{"files":{"AGENTS.md":{},"CONSTITUTION.md":{},".gitignore":{},".claude/skills/t-config/SKILL.md":{},".t-workflow/scripts/x.sh":{},".github/workflows/ci.yml":{},"docs/adr/001-old.md":{},"docs/tasks/TEMPLATE.md":{},"CLAUDE.md":{},".agents/skills":{}}}' > .template-manifest.json
@@ -197,11 +197,14 @@ bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/d" --no-pr >/dev/null 2>&1
 [ -f docs/adr/100-mine.md ] && [ -f docs/tasks/000100/101-x.md ] && [ -f .claude/skills/l-mine/SKILL.md ] && ok || bad "replace: consumer files kept"
 grep -q '^check="make test"' .t-workflow/config && grep -q '^protected="db/migrate/"' .t-workflow/config && grep -q '^docs="site/\*\*"' .t-workflow/config && grep -q '^reviewer_model="opus"' .t-workflow/config && ok || bad "replace: slots into config: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
 grep -q '^Use rubocop.$' AGENTS.md && grep -q '^- Rails only.$' AGENTS.md && ok || bad "replace: notes and constraints into AGENTS.md"
+grep -q '^## Skills of this repository$' AGENTS.md && grep -q '^| `/l-mine` | Does my thing. |$' AGENTS.md && ok || bad "replace: consumer skill rows into AGENTS.md: $(grep -A3 'Skills of' AGENTS.md)"
 grep -q '^\.env$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace: gitignore kept, markers stripped"
 [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 1 ] && grep -q 'CONSTITUTION.md' .t-workflow/REPLACED.md && ! grep -q 'make lint' .t-workflow/REPLACED.md && ok || bad "replace: only the status note is left to report once the ci slot became build.yml: $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
 b=.github/workflows/build.yml
 grep -q '^      - uses: actions/checkout@v4$' $b && grep -q '^      - uses: actions/setup-java@v4$' $b && grep -q '^          java-version: 21$' $b && grep -q '^      - run: make lint$' $b && grep -q '^        run: make test$' $b && grep -q '^    branches: \[main\]$' $b && ok || bad "replace: build.yml written from the ci slot: $(cat $b)"
 grep -q '^      # a column-zero comment$' $b && ok || bad "replace: a column-zero comment in the slot is indented, not mangled: $(grep -n comment $b)"
+! grep -q 'check-manifest' $b && ! grep -q 'manifest lock' $b && grep -q '^      - name: Build$' $b && ok || bad "replace: a step running an old script is dropped with its comment, the rest kept: $(grep -n 'manifest\|Build' $b)"
+grep -A2 '^      - uses: actions/checkout@v4$' $b | grep -q '^          fetch-depth: 0$' && ok || bad "replace: the generated checkout has full depth"
 grep -q "if: \"!cancelled()\"$" $b && ! grep -q 'docs-only' $b && ok || bad "replace: the old docs-only output reference is dropped from if: lines: $(grep 'if:' $b)"
 [ "$(sed -n 's/^\(name\|on\|jobs\):.*/&/p' $b | wc -l)" = 3 ] && ok || bad "replace: build.yml has name, on, jobs"
 [ -L CLAUDE.md ] && [ -L .agents/skills ] && ok || bad "replace: aliases restored"
@@ -310,6 +313,33 @@ STUB
 chmod +x "$tmp/gh3/gh"
 out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" children 7 2>&1); [ "$out" = '[{"number":8,"title":"Step 1","state":"OPEN"},{"number":9,"title":"Step 2","state":"CLOSED"}]' ] && ok || bad "issue.sh children: $out"
 out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" blocking 9 2>&1); [ "$out" = '[{"number":21,"title":"Step 14","state":"OPEN"}]' ] && ok || bad "issue.sh blocking: $out"
+
+echo "# protect.sh (stubbed gh)"
+mkdir -p "$tmp/gh4"; cat > "$tmp/gh4/gh" <<'STUB'
+#!/usr/bin/env bash
+# stub gh: PROTECTION is the current protection JSON ("" = 404 unprotected, "403" = plan refusal); every write is appended to $CALLS as "<method> <path> <body>"
+case "$1 $2" in
+  "repo view") echo "o/r" ;;
+  "api repos/o/r") echo "$@" >> "$CALLS" ;;
+  "api repos/o/r/branches/main/protection")
+    case "${PROTECTION:-}" in "") echo "HTTP 404: Branch not protected" >&2; exit 1 ;; 403) echo "HTTP 403: Upgrade to GitHub Pro" >&2; exit 1 ;; *) printf '%s' "$PROTECTION" ;; esac ;;
+  "api -X")
+    body=""; [[ "$*" == *"--input -"* ]] && body=$(cat)
+    echo "$3 $4 $body" >> "$CALLS" ;;
+  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
+esac
+STUB
+chmod +x "$tmp/gh4/gh"; export CALLS="$tmp/calls"
+cd "$tmp/b"
+: > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":false,"contexts":["checks","cold-review","sonar"]},"enforce_admins":{"enabled":true},"required_pull_request_reviews":{"required_approving_review_count":1}}' PATH="$tmp/gh4:$PATH" "$S/protect.sh" --remove checks --remove cold-review --add build 2>&1)
+has "$out" 'required checks before: checks cold-review sonar' && has "$out" 'required checks now: sonar t-workflow build' && ok || bad "protect: merges into the existing list: $out"
+grep -q '^PATCH repos/o/r/branches/main/protection/required_status_checks {"strict":false,"contexts":\["sonar","t-workflow","build"\]}$' "$CALLS" && ! grep -q '^PUT' "$CALLS" && ok || bad "protect: only the required-checks endpoint is written, everything else untouched: $(cat "$CALLS")"
+: > "$CALLS"; out=$(PROTECTION='' PATH="$tmp/gh4:$PATH" "$S/protect.sh" 2>&1)
+grep -q '^PUT repos/o/r/branches/main/protection {"required_status_checks":{"strict":false,"contexts":\["t-workflow"\]}' "$CALLS" && has "$out" 'protected — PRs only' && ok || bad "protect: no protection yet → the minimal set: $out / $(cat "$CALLS")"
+: > "$CALLS"; out=$(PROTECTION='403' PATH="$tmp/gh4:$PATH" "$S/protect.sh" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'not available on this repository' && ! grep -q 'protection' "$CALLS" && ok || bad "protect: a plan refusal is reported, nothing written (exit $rc): $out"
+: > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":true,"contexts":["t-workflow"]}}' PATH="$tmp/gh4:$PATH" "$S/protect.sh" --add build 2>&1)
+grep -q '{"strict":true,"contexts":\["t-workflow","build"\]}' "$CALLS" && ok || bad "protect: keeps strict and never duplicates t-workflow: $(cat "$CALLS")"
 
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
