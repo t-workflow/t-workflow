@@ -67,8 +67,8 @@ only correlation key.
 
 ## 2026-09-08 — An adoption PR is not under the rules it introduces
 
-`ci.sh` checks whether the base branch already has `.t-workflow/VERSION`. If not, only
-check 1 runs. An update PR is a protected diff like any other.
+`ci.sh` checks whether the base branch already has the contract file. If not, the task
+gates are not in force on that PR. An update PR is a protected diff like any other.
 
 ## 2026-09-08 — Size is reported, not asserted
 

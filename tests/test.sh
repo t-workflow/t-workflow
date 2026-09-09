@@ -165,6 +165,9 @@ out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || 
 (cd "$tmp/c" && [ "$(cat .t-workflow/VERSION)" = v2 ] && grep -q '^check="mine"' .t-workflow/config && grep -q '^mine$' AGENTS.md && ! grep -q 'hand edit' .claude/skills/t-open/SKILL.md) && ok || bad "install: update replaced owned files and kept consumer ones"
 (cd "$tmp/c" && grep -q '^exempt=""' .t-workflow/config && grep -B1 '^exempt=""' .t-workflow/config | head -1 | grep -q '^# Branch globs') && has "$out" 'config: added exempt' && ok || bad "install: update appends a missing config key with its comment"
 [ "$(grep -c '^check=' "$tmp/c/.t-workflow/config")" = 1 ] && ok || bad "install: update does not duplicate present keys"
+(cd "$tmp/c" && sed -i.bak 's|^# Build/test command the agent runs locally.*|# Build/test command, run as check 1 (empty = no check 1 yet).|; /^# CI does not run it/d; s|^# Branch globs exempt.*|# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.|' .t-workflow/config && rm -f .t-workflow/config.bak && git add -A && git commit -qm "old comments")
+bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update (comments)"
+(cd "$tmp/c" && grep -q '^# CI does not run it' .t-workflow/config && ! grep -q 'Check 1 still runs' .t-workflow/config && grep -q '^check="mine"' .t-workflow/config) && ok || bad "install: update rewrites the old default comments and keeps the values: $(grep -E '^#|^check=' "$tmp/c/.t-workflow/config" | head -8)"
 (cd "$tmp/c" && grep -B1 '^# Branch globs' .t-workflow/config | head -1 | grep -q '^$') && ok || bad "install: appended key is separated by a blank line even when the config lacked a trailing newline"
 # a git source: no tag means the newest tag; a tag means that tag
 git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v9.9.1 && git -C "$tmp/src.git" tag v9.9.10 && git -C "$tmp/src.git" tag v9.9.2 && git -C "$tmp/src.git" tag rel/v9.9.3
@@ -184,7 +187,7 @@ printf '# AGENTS.md\n\n## The pipeline\n<!-- local -->\n*(reserved: consumer-loc
 printf '# CONSTITUTION.md\n<!-- local -->\n**Status note:** phase 0.\n<!-- /local -->\n## 3. Protected surfaces\n- `docs/adr/`\n<!-- local -->\n- `db/migrate/`\n<!-- /local -->\n## 4. Stack & architecture\n<!-- local -->\n- Rails only.\n<!-- /local -->\n' > CONSTITUTION.md
 printf 'node_modules\n# <!-- local -->\n.env\n# <!-- /local -->\n' > .gitignore
 echo old > .claude/skills/t-config/SKILL.md; echo mine > .claude/skills/l-mine/SKILL.md; echo old > .t-workflow/scripts/x.sh
-printf 'name: CI\n# <!-- local -->\n      - run: make lint\n# <!-- /local -->\n' > .github/workflows/ci.yml
+printf 'name: CI\n# <!-- local -->\n      - uses: actions/setup-java@v4\n        if: "!cancelled()"\n        with:\n          java-version: 21\n      - run: make lint\n# a column-zero comment\n      - name: Build\n        if: "!cancelled() && steps.docs-only.outputs.docs_only != '"'"'true'"'"'"\n        run: make test\n# <!-- /local -->\n' > .github/workflows/ci.yml
 echo v1 > migrations/V1__x.md; echo adr > docs/adr/001-old.md; echo mine > docs/adr/100-mine.md; echo rec > docs/tasks/000100/101-x.md; echo t > docs/tasks/TEMPLATE.md
 ln -s AGENTS.md CLAUDE.md; mkdir -p .agents && ln -s ../.claude/skills .agents/skills
 printf '{"files":{"AGENTS.md":{},"CONSTITUTION.md":{},".gitignore":{},".claude/skills/t-config/SKILL.md":{},".t-workflow/scripts/x.sh":{},".github/workflows/ci.yml":{},"docs/adr/001-old.md":{},"docs/tasks/TEMPLATE.md":{},"CLAUDE.md":{},".agents/skills":{}}}' > .template-manifest.json
@@ -197,7 +200,9 @@ grep -q '^Use rubocop.$' AGENTS.md && grep -q '^- Rails only.$' AGENTS.md && ok 
 grep -q '^\.env$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace: gitignore kept, markers stripped"
 [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 1 ] && grep -q 'CONSTITUTION.md' .t-workflow/REPLACED.md && ! grep -q 'make lint' .t-workflow/REPLACED.md && ok || bad "replace: only the status note is left to report once the ci slot became build.yml: $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
 b=.github/workflows/build.yml
-grep -q '^      - uses: actions/checkout@v4$' $b && grep -q '^      - run: make lint$' $b && grep -q '^    branches: \[main\]$' $b && ok || bad "replace: build.yml written from the ci slot: $(cat $b)"
+grep -q '^      - uses: actions/checkout@v4$' $b && grep -q '^      - uses: actions/setup-java@v4$' $b && grep -q '^          java-version: 21$' $b && grep -q '^      - run: make lint$' $b && grep -q '^        run: make test$' $b && grep -q '^    branches: \[main\]$' $b && ok || bad "replace: build.yml written from the ci slot: $(cat $b)"
+grep -q '^      # a column-zero comment$' $b && ok || bad "replace: a column-zero comment in the slot is indented, not mangled: $(grep -n comment $b)"
+grep -q "if: \"!cancelled()\"$" $b && ! grep -q 'docs-only' $b && ok || bad "replace: the old docs-only output reference is dropped from if: lines: $(grep 'if:' $b)"
 [ "$(sed -n 's/^\(name\|on\|jobs\):.*/&/p' $b | wc -l)" = 3 ] && ok || bad "replace: build.yml has name, on, jobs"
 [ -L CLAUDE.md ] && [ -L .agents/skills ] && ok || bad "replace: aliases restored"
 printf '{"files":{}}' > .template-manifest.json
@@ -210,7 +215,7 @@ printf '# CONSTITUTION.md\n<!-- local -->\n**Status note:** phase 0.\n<!-- /loca
 printf 'node_modules\n# <!-- local -->\n# <!-- /local -->\n' > .gitignore
 echo old > .claude/skills/t-config/SKILL.md; echo old > .claude/skills/t-work/SKILL.md; echo mine > .claude/skills/l-mine/SKILL.md
 echo old > .t-workflow/scripts/protected-paths.sh; echo old > .t-workflow/scripts/check-record.sh; printf 'my-check\n' > .t-workflow/required-checks.local
-printf 'name: CI\n    # <!-- local -->\n    timeout-minutes: 10\n    # <!-- /local -->\n# <!-- local -->\n      - run: make lint\n# <!-- /local -->\n# <!-- local -->\n# <!-- /local -->\n' > .github/workflows/ci.yml; printf 'x\n    # <!-- local -->\n    timeout-minutes: 10\n    # <!-- /local -->\n' > .github/workflows/review-gate.yml; echo mine > .github/workflows/deploy.yml
+printf 'name: CI\n    # <!-- local -->\n    timeout-minutes: 20\n    # <!-- /local -->\n# <!-- local -->\n      - run: make lint\n# <!-- /local -->\n# <!-- local -->\n# <!-- /local -->\n' > .github/workflows/ci.yml; printf 'x\n    # <!-- local -->\n    timeout-minutes: 10\n    # <!-- /local -->\n' > .github/workflows/review-gate.yml; echo mine > .github/workflows/deploy.yml
 echo old > .github/ISSUE_TEMPLATE/task.yml; echo old > .github/ISSUE_TEMPLATE/initiative.yml; echo old > .github/ISSUE_TEMPLATE/config.yml; echo mine > .github/ISSUE_TEMPLATE/bug.yml
 echo v1 > migrations/V1__x.md; echo adr > docs/adr/001-old.md; echo mine > docs/adr/100-mine.md; echo old > docs/workflow.md; echo old > docs/tasks/README.md; echo t > docs/tasks/TEMPLATE.md; echo rec > docs/tasks/000000/12-x.md
 echo old > docs/adapters/TRACKER.md; echo old > docs/architecture/manifest.md; echo mine > docs/architecture/mine.md; echo mine > docs/own/notes.md
@@ -223,10 +228,16 @@ for p in .claude/skills/l-mine/SKILL.md .github/workflows/deploy.yml .github/ISS
 [ -f .claude/skills/t-work/SKILL.md ] && grep -q '^name: t-work' .claude/skills/t-work/SKILL.md && ok || bad "replace (no manifest): old t-work replaced by the new one"
 grep -q '^check=""' .t-workflow/config && grep -q '^reviewer_model=""' .t-workflow/config && ok || bad "replace (no manifest): placeholder slots leave config at defaults: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
 head -1 AGENTS.md | grep -q t-workflow && ! grep -q 'reserved' AGENTS.md && ok || bad "replace (no manifest): AGENTS.md rebuilt without placeholders"
+grep -q 'my-check' .t-workflow/REPLACED.md && ! grep -q 'make lint' .t-workflow/REPLACED.md && [ -f .github/workflows/build.yml ] && grep -q '^      - run: make lint$' .github/workflows/build.yml && ok || bad "replace (no manifest): required-checks.local reported, the ci slot became build.yml"
+grep -q '^    timeout-minutes: 20$' .github/workflows/build.yml && ok || bad "replace (no manifest): the build's timeout comes from ci.yml, not review-gate.yml: $(grep timeout .github/workflows/build.yml)"
+[ -f .github/workflows/deploy.yml ] && ok || bad "replace (no manifest): the consumer's own workflow kept"
 ! grep -q 'timeout-minutes' .t-workflow/REPLACED.md && [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 2 ] && ok || bad "replace (no manifest): timeouts and empty slots are not reported (status note and required-checks expected): $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
 [ -L CLAUDE.md ] && [ -L .github/copilot-instructions.md ] && [ -L .agents/skills ] && ok || bad "replace (no manifest): aliases kept"
 grep -q '^node_modules$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace (no manifest): gitignore kept, markers stripped"
 out=$(bash "$ROOT/install.sh" v4 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1); has "$out" 'mode: update' && ok || bad "after replace, the next run is an update: $out"
+mkdir -p "$tmp/k/.t-workflow/scripts" "$tmp/k/.github/workflows" && cd "$tmp/k" && git init -q -b main && echo c > CONSTITUTION.md && echo o > .t-workflow/scripts/protected-paths.sh && printf 'name: CI\n# <!-- local -->\n      - run: make lint\n# <!-- /local -->\n' > .github/workflows/ci.yml && echo 'name: mine' > .github/workflows/build.yml && git add -A && git commit -qm old
+bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/k" --no-pr >/dev/null 2>&1 || bad "replace (existing build.yml)"
+[ "$(cat .github/workflows/build.yml)" = "name: mine" ] && grep -q 'make lint' .t-workflow/REPLACED.md && ok || bad "replace: an existing build.yml is kept and the slot's steps are reported instead: $(cat .t-workflow/REPLACED.md 2>/dev/null | tail -5)"
 mkdir -p "$tmp/h/.t-workflow/scripts" && cd "$tmp/h" && git init -q -b main && printf '# C\n## 3. Protected surfaces\n<!-- local -->\n*(reserved: bullets)*\n<!-- /local -->\n' > CONSTITUTION.md && echo old > .t-workflow/scripts/protected-paths.sh && printf '# A\n## Project notes\n<!-- local -->\n*(reserved: notes)*\n<!-- /local -->\n' > AGENTS.md && git add -A && git commit -qm old
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/h" --no-pr >/dev/null 2>&1 || bad "replace (placeholders only)"
 [ ! -e "$tmp/h/.t-workflow/REPLACED.md" ] && ok || bad "replace: no REPLACED.md when every slot was a placeholder"
@@ -254,6 +265,51 @@ sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config
 out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch"
 sedi 's|^check=""|check="false"|' .t-workflow/config
 if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
+
+echo "# rerun-ci.sh (stubbed gh)"
+mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'
+#!/usr/bin/env bash
+# stub gh: $PRVIEW is `pr view`'s JSON (empty = fail), $RUNS is `run list`'s JSON (empty = fail),
+# every `run rerun` id is appended to $RERUNS. The exact flag shapes the script relies on are checked.
+case "$1 $2" in
+  "pr view") [ -n "${PRVIEW:-}" ] || exit 1; [[ "$*" == *"--json headRefOid,isDraft"* ]] || { echo "stub: unexpected pr view flags: $*" >&2; exit 9; }; printf '%s' "$PRVIEW" ;;
+  "run list") [ -n "${RUNS:-}" ] || exit 1; [[ "$*" == *"--workflow t-workflow"* && "$*" == *"--commit abc123"* && "$*" == *"--json databaseId,status,conclusion"* ]] || { echo "stub: unexpected run list flags: $*" >&2; exit 9; }; printf '%s' "$RUNS" ;;
+  "run rerun") echo "$3" >> "$RERUNS"; [ "${RERUN_FAILS:-}" = 1 ] && exit 1; exit 0 ;;
+  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
+esac
+STUB
+chmod +x "$tmp/gh2/gh"; export RERUNS="$tmp/reruns"; : > "$RERUNS"
+cd "$tmp/b"; export PRVIEW='{"headRefOid":"abc123","isDraft":false}'
+rr() { PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1; }
+out=$(PRVIEW='{"headRefOid":"abc123","isDraft":true}' rr); has "$out" 'is a draft' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: draft PR needs no re-run: $out"
+out=$(RUNS='[]' rr); has "$out" 'no t-workflow run at abc123' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run: $out"
+out=$(RUNS='[{"databaseId":9,"status":"in_progress","conclusion":null}]' rr); has "$out" 'still in_progress; if it ends red, run this again' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: in progress: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"success"}]' rr); has "$out" 'already green' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: green is a no-op: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"skipped"}]' rr); has "$out" 'was skipped.*nothing to re-run' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: skipped run is not re-run: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"},{"databaseId":8,"status":"completed","conclusion":"success"}]' rr)
+has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the newest red run: $out / $(cat "$RERUNS")"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 rr); rc=$?
+[ "$rc" -eq 1 ] && has "$out" 'could not re-run' && ok || bad "rerun-ci: reports a failed re-run (exit $rc): $out"
+out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok || bad "rerun-ci: a failed run list is an error, not 'no run' (exit $rc): $out"
+out=$(PRVIEW='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot read PR' && ok || bad "rerun-ci: unreadable PR (exit $rc): $out"
+grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
+
+echo "# issue.sh children / blocking (stubbed gh, GitHub's real shape)"
+mkdir -p "$tmp/gh3"
+cat > "$tmp/gh3/gh" <<'STUB'
+#!/usr/bin/env bash
+# stub gh: returns GitHub's real JSON for the two fields, then applies the --jq expression the script passed
+args=("$@"); expr=""; for i in "${!args[@]}"; do [ "${args[$i]}" = "--jq" ] && expr="${args[$((i+1))]}"; done
+case "$*" in
+  *"--json subIssues"*) json='{"subIssues":{"nodes":[{"id":"I_1","number":8,"state":"OPEN","title":"Step 1","url":"u"},{"id":"I_2","number":9,"state":"CLOSED","title":"Step 2","url":"u"}]}}' ;;
+  *"--json blocking"*)  json='{"blocking":{"nodes":[{"id":"I_3","number":21,"state":"OPEN","title":"Step 14","url":"u"}]}}' ;;
+  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
+esac
+if [ -n "$expr" ]; then printf '%s' "$json" | jq -c "$expr"; else printf '%s' "$json"; fi
+STUB
+chmod +x "$tmp/gh3/gh"
+out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" children 7 2>&1); [ "$out" = '[{"number":8,"title":"Step 1","state":"OPEN"},{"number":9,"title":"Step 2","state":"CLOSED"}]' ] && ok || bad "issue.sh children: $out"
+out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" blocking 9 2>&1); [ "$out" = '[{"number":21,"title":"Step 14","state":"OPEN"}]' ] && ok || bad "issue.sh blocking: $out"
 
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
