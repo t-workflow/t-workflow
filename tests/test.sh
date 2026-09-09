@@ -193,21 +193,29 @@ out=$(ci wip/6-docs "[6] Docs"); has "$out" 'check 1 skipped: documentation-only
 echo "# rerun-ci.sh (stubbed gh)"
 mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'
 #!/usr/bin/env bash
-# stub: the run list comes from $RUNS; every rerun is recorded in $RERUNS
+# stub gh: $PRVIEW is `pr view`'s JSON (empty = fail), $RUNS is `run list`'s JSON (empty = fail),
+# every `run rerun` id is appended to $RERUNS. The exact flag shapes the script relies on are checked.
 case "$1 $2" in
-  "pr view") echo '{"headRefOid":"abc123"}' | jq "${@: -1}" -r 2>/dev/null || echo abc123 ;;
-  "run list") printf '%s' "$RUNS" | jq "${@: -1}" ;;
+  "pr view") [ -n "${PRVIEW:-}" ] || exit 1; [[ "$*" == *"--json headRefOid,isDraft"* ]] || { echo "stub: unexpected pr view flags: $*" >&2; exit 9; }; printf '%s' "$PRVIEW" ;;
+  "run list") [ -n "${RUNS:-}" ] || exit 1; [[ "$*" == *"--workflow t-workflow"* && "$*" == *"--commit abc123"* && "$*" == *"--json databaseId,status,conclusion"* ]] || { echo "stub: unexpected run list flags: $*" >&2; exit 9; }; printf '%s' "$RUNS" ;;
   "run rerun") echo "$3" >> "$RERUNS"; [ "${RERUN_FAILS:-}" = 1 ] && exit 1; exit 0 ;;
+  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
 esac
 STUB
 chmod +x "$tmp/gh2/gh"; export RERUNS="$tmp/reruns"; : > "$RERUNS"
-cd "$tmp/b"
-out=$(RUNS='[]' PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1); has "$out" 'no t-workflow run at abc123 yet' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run yet: $out"
-out=$(RUNS='[{"databaseId":9,"headSha":"abc123","status":"in_progress","conclusion":null}]' PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1); has "$out" 'still in_progress' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: in progress: $out"
-out=$(RUNS='[{"databaseId":9,"headSha":"abc123","status":"completed","conclusion":"failure"},{"databaseId":8,"headSha":"old","status":"completed","conclusion":"success"}]' PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1)
-has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the head's run only: $out / $(cat "$RERUNS")"
-out=$(RUNS='[{"databaseId":9,"headSha":"abc123","status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1); rc=$?
+cd "$tmp/b"; export PRVIEW='{"headRefOid":"abc123","isDraft":false}'
+rr() { PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1; }
+out=$(PRVIEW='{"headRefOid":"abc123","isDraft":true}' rr); has "$out" 'is a draft' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: draft PR needs no re-run: $out"
+out=$(RUNS='[]' rr); has "$out" 'no t-workflow run at abc123' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run: $out"
+out=$(RUNS='[{"databaseId":9,"status":"in_progress","conclusion":null}]' rr); has "$out" 'still in_progress; if it ends red, run this again' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: in progress: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"success"}]' rr); has "$out" 'already green' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: green is a no-op: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"skipped"}]' rr); has "$out" 'was skipped' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: skipped run is not re-run: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"},{"databaseId":8,"status":"completed","conclusion":"success"}]' rr)
+has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the newest red run: $out / $(cat "$RERUNS")"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 rr); rc=$?
 [ "$rc" -eq 1 ] && has "$out" 'could not re-run' && ok || bad "rerun-ci: reports a failed re-run (exit $rc): $out"
+out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok || bad "rerun-ci: a failed run list is an error, not 'no run' (exit $rc): $out"
+out=$(PRVIEW='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot read PR' && ok || bad "rerun-ci: unreadable PR (exit $rc): $out"
 grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
 
 echo "# footprint (informational)"

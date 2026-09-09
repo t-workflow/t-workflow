@@ -9,7 +9,9 @@ Read `.t-workflow/AGENTS.md`.
 
 1. `.t-workflow/scripts/gate.sh ship <id>`. Any `BLOCKED:` line → stop and relay it
    with the command it names. Keep the output: it is the evidence for step 4.
-2. `gh pr ready <pr>`. CI starts here (drafts skip it). Then `gh pr checks <pr> --watch`.
+2. `gh pr ready <pr>`. CI starts here (drafts skip it). A PR that was already ready may
+   carry a run that went red before its review existed: `.t-workflow/scripts/rerun-ci.sh <pr>`
+   re-runs it (a no-op when green). Then `gh pr checks <pr> --watch`.
    No CI configured → say so and continue. Red → `gh pr ready <pr> --undo`, report
    which check failed, name `/t-work <id>`. Stop.
 3. Do not edit anything. A defect noticed here is a finding for the report, not a fix.
