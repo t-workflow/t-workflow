@@ -6,7 +6,9 @@
 #                       and PR state, whether this is a fresh or a fix pass.
 #   gate.sh ship <id>   may the PR merge? one open PR, record present and valid, title,
 #                       plan and current cold review on a protected diff, blockers,
-#                       mergeability, nothing unpushed, the review's pending human checks.
+#                       mergeability, nothing unpushed, the review's pending human checks
+#                       (unknown when the review has no such section — that blocks) and
+#                       its open medium/low findings.
 #   exit 0 = proceed; 1 = at least one BLOCKED line; 2 = could not evaluate.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -132,6 +134,8 @@ ship)
     [ "$verdict" = ready ] && [ "$fresh" = no ] && echo "note: the ready review predates the head commit"
   fi
 
+  [ "$verdict" != none ] && printf '%s\n' "$rv" | grep -q '^pending: unknown$' \
+    && block "the review has no '## Pending human checks' section, so its checks are unknown — ask the reviewer to add it (\"none\" when there are none)"
   m=$(printf '%s' "$v" | jq -r .mergeable); echo "mergeable: $m"
   [ "$m" = CONFLICTING ] && block "the branch conflicts with $trunk — rebase through /t-work $id"
   cur=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)

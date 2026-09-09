@@ -44,10 +44,14 @@ match_any() {
   return 1
 }
 
-# section <heading> < markdown: the body of the first '## <heading>' section.
+# section <heading> < markdown: the body of the first '## <heading>' section. Carriage
+# returns (a review typed in GitHub's web editor) and trailing spaces on the heading are
+# ignored, so a section is never silently missed.
 section() {
   awk -v h="## $1" '
-    $0 == h { on = 1; next }
+    { sub(/\r$/, "") }
+    { t = $0; sub(/[[:space:]]+$/, "", t) }
+    t == h { on = 1; next }
     /^## / { if (on) exit }
     on { print }'
 }
@@ -105,7 +109,7 @@ review_verdict() {
   if [ -z "$pending" ]; then echo "pending: unknown"; else echo "pending:"; printf '%s\n' "$pending" | sed 's/^/  /'; fi
   local findings
   findings=$(printf '%s\n' "$body" | section "Findings" | awk '
-    /^### /{ sev = tolower($0); sub(/^### */, "", sev); next }
-    (sev == "medium" || sev == "low") && /^- / && tolower($0) !~ /^- *none\.? *$/ { print "  " sev ": " substr($0, 3) }')
+    /^### /{ sev = tolower($0); sub(/^### */, "", sev); sub(/[[:space:]]+$/, "", sev); next }
+    (sev == "medium" || sev == "low") && /^- / && tolower($0) !~ /^- *\(?none\)?\.? *$/ { print "  " sev ": " substr($0, 3) }')
   if [ -z "$findings" ]; then echo "open-findings: none"; else echo "open-findings:"; printf '%s\n' "$findings"; fi
 }

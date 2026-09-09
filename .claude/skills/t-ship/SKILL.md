@@ -8,7 +8,8 @@ description: Ship a task — gate, mark the draft PR ready, watch CI, obtain the
 Read `.t-workflow/AGENTS.md`.
 
 1. `.t-workflow/scripts/gate.sh ship <id>`. Any `BLOCKED:` line → stop and relay it
-   with the command it names. Keep the output: it is the evidence for step 4.
+   with the command it names — including a review whose pending human checks are
+   unknown, which is never read as none. Keep the output: it is the evidence for step 4.
 2. `gh pr ready <pr>`. CI starts here (drafts skip it). A PR that was already ready may
    carry a run that went red before its review existed: `.t-workflow/scripts/rerun-ci.sh <pr>`
    re-runs it (a no-op unless a completed run at the head is red). Then
