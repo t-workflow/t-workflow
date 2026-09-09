@@ -11,10 +11,10 @@ depends on one agent.
 From the trunk branch of a clean checkout, with `gh` authenticated:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/v1.0.0/install.sh | bash -s -- v1.0.0
+curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/main/install.sh | bash
 ```
 
-That opens an issue, a branch, and a pull request that adds t-workflow, and sets
+That installs the newest tag (pass a tag to pin one), opens an issue, a branch, and a pull request that adds t-workflow, and sets
 branch protection. Review the PR — in particular the detected check command in
 `.t-workflow/config` — and merge it. The workflow is in force from then on.
 
@@ -28,10 +28,11 @@ automatic home is listed in `.t-workflow/REPLACED.md`.
 
 ## Update
 
-Ask your agent to `/t-update v1.1.0`, or run the same install command with the new
-tag. Every t-workflow-owned file is replaced with the release's copy; `AGENTS.md` and
-`.t-workflow/config` are never touched. `CHANGELOG.md` names any consumer action a
-release needs.
+Ask your agent to `/t-update`, or run the same install command again. Every
+t-workflow-owned file is replaced with the release's copy; `AGENTS.md` and
+`.t-workflow/config` are never touched, except that a key a release added is appended
+with its default. The update PR's diff, and the commits between the two tags that the
+installer prints, are the changelog. A release is a tag; nothing else.
 
 ## What lands in your repository
 
@@ -42,6 +43,7 @@ release needs.
 | `.claude/skills/t-*/` and the `.agents/skills` symlink | t-workflow — nine skills |
 | `.github/workflows/t-workflow.yml` | t-workflow — runs `ci.sh` on every PR |
 | `docs/tasks/TEMPLATE.md` | t-workflow — the record shape |
+| `.t-workflow/VERSION` | t-workflow — the installed tag |
 | `.t-workflow/config` | **you** — check command, protected paths, exempt branches, reviewer model |
 | `AGENTS.md` (`CLAUDE.md`, `GEMINI.md` symlink to it) | **you** — one pointer line, then your own notes |
 | `docs/tasks/<id>-<slug>.md` | **you** — one record per task |
@@ -72,5 +74,5 @@ mechanically, then runs your check command unless the diff is documentation only
 ## This repository
 
 Uses itself. `tests/test.sh` is its check command; `docs/decisions.md` holds the
-reasoning behind its shape. `install.sh`, `tests/`, `CHANGELOG.md`, and this README
-never reach a consumer.
+reasoning behind its shape. `install.sh`, `tests/`, and this README never reach a
+consumer. Nothing in the tree names a version: a release is a tag on `main`.

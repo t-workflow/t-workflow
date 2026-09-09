@@ -19,7 +19,7 @@ exempt_branch=no
 match_any "$HEAD_REF" $exempt 2>/dev/null && exempt_branch=yes
 [ -z "$exempt" ] && exempt_branch=no
 
-if ! git cat-file -e "origin/$BASE_REF:.t-workflow/VERSION" 2>/dev/null; then
+if ! git cat-file -e "origin/$BASE_REF:.t-workflow/AGENTS.md" 2>/dev/null; then
   ok "adoption PR: $BASE_REF has no t-workflow yet, so the task gates are not in force until this merges"
 elif [ "$exempt_branch" = yes ]; then
   ok "branch $HEAD_REF is exempt from the task gates (config: exempt)"

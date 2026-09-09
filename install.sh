@@ -2,9 +2,9 @@
 # Install t-workflow into the current repository, update it to a newer release, or
 # replace the old template-based t-workflow. One command; it opens the PR itself.
 #
-#   curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/<tag>/install.sh | bash -s -- <tag> [options]
+#   curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/main/install.sh | bash -s -- [<tag>] [options]
 #
-#   <tag>               the release to install (e.g. v1.0.0)
+#   <tag>               the release to install; default: the newest tag at the source
 #   --check "<cmd>"     the build/test command for .t-workflow/config (else detected from the repo)
 #   --from <url|path>   where to take the release from (default: the t-workflow repository)
 #   --dir <path>        the repository to install into (default: the current directory)
@@ -19,7 +19,6 @@ set -euo pipefail
 SOURCE_URL="https://github.com/t-workflow/t-workflow.git"
 OWNED="
 .t-workflow/AGENTS.md
-.t-workflow/VERSION
 .t-workflow/scripts
 .claude/skills/t-open
 .claude/skills/t-plan
@@ -50,7 +49,12 @@ while [ $# -gt 0 ]; do
     *) [ -z "$tag" ] && tag="$1" || die "unexpected argument $1"; shift ;;
   esac
 done
-[ -n "$tag" ] || die "usage: install.sh <tag> [--check <cmd>] [--from <url|path>] [--dir <path>] [--no-protect] [--no-pr]"
+source="${from:-$SOURCE_URL}"
+if [ -z "$tag" ]; then
+  [ -d "$source" ] && die "a tag is required with a local directory source"
+  tag=$(git ls-remote --tags --refs "$source" 2>/dev/null | sed 's#.*/##' | sort -V | tail -1)
+  [ -n "$tag" ] || die "no tags found at $source; pass one explicitly"
+fi
 
 cd "$dir" || die "no such directory: $dir"
 git rev-parse --show-toplevel >/dev/null 2>&1 || die "$PWD is not a git repository"
@@ -72,14 +76,18 @@ fi
 
 # --- source -----------------------------------------------------------------------
 src=$(mktemp -d); trap 'rm -rf "$src"' EXIT
-if [ -n "$from" ] && [ -d "$from" ]; then
-  note "source: $from (local)"
-  cp -R "$from"/. "$src"/
+if [ -d "$source" ]; then
+  note "source: $source (local directory, labelled $tag)"
+  cp -R "$source"/. "$src"/
 else
-  note "source: ${from:-$SOURCE_URL} at $tag"
-  git clone -q --depth 1 --branch "$tag" "${from:-$SOURCE_URL}" "$src" || die "could not clone $tag"
+  note "source: $source at $tag"
+  git clone -q --branch "$tag" "$source" "$src" || die "could not clone $tag"
 fi
 [ -f "$src/.t-workflow/AGENTS.md" ] || die "the source does not look like t-workflow"
+if [ "$mode" = update ] && [ -d "$src/.git" ]; then
+  note "changes from $current to $tag:"
+  git -C "$src" log --oneline "$current..$tag" 2>/dev/null | sed 's/^/  /' || note "  (history between the two tags is not available)"
+fi
 trunk=$("$src/.t-workflow/scripts/trunk.sh")
 
 # --- task: issue and branch --------------------------------------------------------
@@ -203,8 +211,8 @@ detect_check() {
   elif [ -f Makefile ] && grep -qE '^test:' Makefile; then echo "make test"
   fi
 }
-if [ ! -f .t-workflow/config ]; then
-  cat > .t-workflow/config <<'CONFIG'
+default_config() {
+  cat <<'CONFIG'
 # t-workflow configuration. Owned by this repository; never touched by an update.
 # Shell syntax: key="value". Read by .t-workflow/scripts/*.
 
@@ -225,6 +233,9 @@ exempt=""
 # Model /t-review's subagent reviewer runs under (empty = the invoking session's own).
 reviewer_model=""
 CONFIG
+}
+if [ ! -f .t-workflow/config ]; then
+  default_config > .t-workflow/config
   chk="${check_arg:-${old_check:-$(detect_check)}}"
   [ -n "$chk" ] && sed -i.bak "s|^check=\"\"|check=\"$(printf '%s' "$chk" | sed 's/[|&\\]/\\&/g')\"|" .t-workflow/config
   [ -n "${old_protected:-}" ] && sed -i.bak "s|^protected=\"\"|protected=\"${old_protected% }\"|" .t-workflow/config
@@ -232,8 +243,18 @@ CONFIG
   [ -n "${old_model:-}" ] && sed -i.bak "s|^reviewer_model=\"\"|reviewer_model=\"$old_model\"|" .t-workflow/config
   rm -f .t-workflow/config.bak
   note "wrote .t-workflow/config (check: ${chk:-none detected})"
-elif [ -n "$check_arg" ]; then
-  sed -i.bak "s|^check=.*|check=\"$(printf '%s' "$check_arg" | sed 's/[|&\\]/\\&/g')\"|" .t-workflow/config; rm -f .t-workflow/config.bak
+else
+  # A release may add a key: append what this config lacks, with its comment, leaving present values alone.
+  def=$(mktemp); default_config > "$def"
+  for key in $(grep -oE '^[a-z_]+=' "$def" | tr -d =); do
+    grep -q "^$key=" .t-workflow/config && continue
+    awk -v k="$key=" '/^#/{b=b $0 "\n"; next} index($0,k)==1{printf "\n%s%s\n", b, $0; exit} {b=""}' "$def" >> .t-workflow/config
+    note "config: added $key with its default"
+  done
+  rm -f "$def"
+  if [ -n "$check_arg" ]; then
+    sed -i.bak "s|^check=.*|check=\"$(printf '%s' "$check_arg" | sed 's/[|&\\]/\\&/g')\"|" .t-workflow/config; rm -f .t-workflow/config.bak
+  fi
 fi
 
 pointer='Read `.t-workflow/AGENTS.md` first — the delivery workflow for this repository.'
@@ -277,6 +298,6 @@ if [ "$protect" = yes ] && [ "$mode" != update ]; then .t-workflow/scripts/prote
 note ""
 note "PR: $prurl"
 case "$mode" in
-  update) note "next: /t-drive $id (cold review, then the merge question) — read CHANGELOG.md for consumer actions between $current and $tag" ;;
+  update) note "next: /t-drive $id (cold review, then the merge question)" ;;
   *) note "next: review the PR and merge it; the workflow is in force from then on" ;;
 esac
