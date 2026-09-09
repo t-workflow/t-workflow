@@ -190,6 +190,26 @@ git checkout -q -- . 2>/dev/null; git checkout -q main; git checkout -q -b wip/6
 sedi 's|^check=.*|check="false"|' .t-workflow/config
 out=$(ci wip/6-docs "[6] Docs"); has "$out" 'check 1 skipped: documentation-only diff' && ok || bad "ci: docs-only skip: $out"
 
+echo "# rerun-ci.sh (stubbed gh)"
+mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'
+#!/usr/bin/env bash
+# stub: the run list comes from $RUNS; every rerun is recorded in $RERUNS
+case "$1 $2" in
+  "pr view") echo '{"headRefOid":"abc123"}' | jq "${@: -1}" -r 2>/dev/null || echo abc123 ;;
+  "run list") printf '%s' "$RUNS" | jq "${@: -1}" ;;
+  "run rerun") echo "$3" >> "$RERUNS"; [ "${RERUN_FAILS:-}" = 1 ] && exit 1; exit 0 ;;
+esac
+STUB
+chmod +x "$tmp/gh2/gh"; export RERUNS="$tmp/reruns"; : > "$RERUNS"
+cd "$tmp/b"
+out=$(RUNS='[]' PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1); has "$out" 'no t-workflow run at abc123 yet' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run yet: $out"
+out=$(RUNS='[{"databaseId":9,"headSha":"abc123","status":"in_progress","conclusion":null}]' PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1); has "$out" 'still in_progress' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: in progress: $out"
+out=$(RUNS='[{"databaseId":9,"headSha":"abc123","status":"completed","conclusion":"failure"},{"databaseId":8,"headSha":"old","status":"completed","conclusion":"success"}]' PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1)
+has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the head's run only: $out / $(cat "$RERUNS")"
+out=$(RUNS='[{"databaseId":9,"headSha":"abc123","status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1); rc=$?
+[ "$rc" -eq 1 ] && has "$out" 'could not re-run' && ok || bad "rerun-ci: reports a failed re-run (exit $rc): $out"
+grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
+
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
 echo "consumer footprint: ${bytes:-?} bytes"

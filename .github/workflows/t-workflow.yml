@@ -1,12 +1,12 @@
 # t-workflow's mechanical enforcement: .t-workflow/scripts/ci.sh on every pull request.
 # Drafts skip it (the work/review window costs nothing); marking a PR ready starts it.
-# A submitted review re-runs it, since a review is what a protected diff waits for.
+# One run per commit: a protected diff's run is red until its cold review exists, and
+# /t-review re-runs that same run after posting (rerun-ci.sh) rather than triggering a
+# second one, which branch protection would count alongside the red one.
 name: t-workflow
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
 permissions:
   contents: read
   issues: read
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   t-workflow:
     name: t-workflow
-    if: github.event_name == 'pull_request_review' || github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

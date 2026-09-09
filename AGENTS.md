@@ -22,3 +22,7 @@ is judged first by that cost:
   call them.
 - Friction a consumer hits is fixed here, never worked around in the consumer.
 - A hand step at install or update time is a defect in the installer.
+- Before changing a stage or CI, trace one concrete PR through every event it will
+  produce — push, checks red, review, checks green, merge — and name what turns each
+  red state green without a human. When dropping something the old system had, first
+  say what it did differently and why; keep the reason, drop the machinery.
