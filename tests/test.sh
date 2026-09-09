@@ -285,6 +285,23 @@ out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok
 out=$(PRVIEW='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot read PR' && ok || bad "rerun-ci: unreadable PR (exit $rc): $out"
 grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
 
+echo "# issue.sh children / blocking (stubbed gh, GitHub's real shape)"
+mkdir -p "$tmp/gh3"
+cat > "$tmp/gh3/gh" <<'STUB'
+#!/usr/bin/env bash
+# stub gh: returns GitHub's real JSON for the two fields, then applies the --jq expression the script passed
+args=("$@"); expr=""; for i in "${!args[@]}"; do [ "${args[$i]}" = "--jq" ] && expr="${args[$((i+1))]}"; done
+case "$*" in
+  *"--json subIssues"*) json='{"subIssues":{"nodes":[{"id":"I_1","number":8,"state":"OPEN","title":"Step 1","url":"u"},{"id":"I_2","number":9,"state":"CLOSED","title":"Step 2","url":"u"}]}}' ;;
+  *"--json blocking"*)  json='{"blocking":{"nodes":[{"id":"I_3","number":21,"state":"OPEN","title":"Step 14","url":"u"}]}}' ;;
+  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
+esac
+if [ -n "$expr" ]; then printf '%s' "$json" | jq -c "$expr"; else printf '%s' "$json"; fi
+STUB
+chmod +x "$tmp/gh3/gh"
+out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" children 7 2>&1); [ "$out" = '[{"number":8,"title":"Step 1","state":"OPEN"},{"number":9,"title":"Step 2","state":"CLOSED"}]' ] && ok || bad "issue.sh children: $out"
+out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" blocking 9 2>&1); [ "$out" = '[{"number":21,"title":"Step 14","state":"OPEN"}]' ] && ok || bad "issue.sh blocking: $out"
+
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
 echo "consumer footprint: ${bytes:-?} bytes"
