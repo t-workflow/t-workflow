@@ -189,7 +189,7 @@ if [ "$mode" = replace ]; then
   report=$(mktemp); report_used=no
   echo "# Replaced the old t-workflow" > "$report"
   echo >> "$report"; echo "Content the old local slots held that has no automatic place in the new layout. Place it by hand, then delete this file." >> "$report"
-  old_check=""; old_docs=""; old_protected=""; old_model=""; old_notes=""; old_constraints=""; old_ci_steps=""; old_ci_timeout=""
+  old_check=""; old_docs=""; old_protected=""; old_model=""; old_notes=""; old_constraints=""; old_ci_steps=""; old_ci_timeout=""; old_skill_rows=""
   slots() { # <file>: each marked region, preceded by "@@ <last ## heading>"
     awk '/^## /{h=$0} /^[[:space:]]*#?[[:space:]]*<!-- local -->[[:space:]]*$/{on=1; print "@@ " h; next}
          /^[[:space:]]*#?[[:space:]]*<!-- \/local -->[[:space:]]*$/{on=0; next} on{print}' "$1"
@@ -210,6 +210,12 @@ if [ "$mode" = replace ]; then
           if printf '%s' "$buf" | grep -qE '^1\. '; then
             printf '%s' "$buf" | grep -qE '^1\. \*\*\(none' || old_check=$(printf '%s' "$buf" | grep -oE '`[^`]+`' | head -1 | tr -d '`' || true)
           else old_docs=$(printf '%s' "$buf" | grep -oE '`[^`]+`' | tr -d '`' | tr '\n' ' ' || true); fi ;;
+        agents:"## The pipeline")
+          old_skill_rows=$(printf '%s' "$buf" | grep -E '^\| `/' || true)
+          rest=$(printf '%s' "$buf" | grep -vE '^\| `/|^\| Skill \| Stage \|$|^\|---\|---\|$|^[[:space:]]*$' || true)
+          if [ -n "$rest" ]; then
+            { echo; echo "## $f — $h (text beside the skill rows)"; echo; echo '```'; printf '%s\n' "$rest"; echo '```'; } >> "$report"; report_used=yes
+          fi ;;
         agents:"## Reviewer model") old_model=$(printf '%s' "$buf" | sed -n 's/^Default reviewer model: *//p' | grep -v '^(none' | head -1 || true) ;;
         agents:"## Project notes") old_notes="$buf" ;;
         constitution:"## 3. Protected surfaces") old_protected=$(printf '%s' "$buf" | grep -oE '`[^`]+`' | tr -d '`' | tr '\n' ' ' || true) ;;
@@ -271,16 +277,28 @@ if [ -n "${old_ci_steps:-}" ]; then
       echo "    timeout-minutes: ${old_ci_timeout:-30}"
       echo "    steps:"
       echo "      - uses: actions/checkout@v4"
+      echo "        with:"
+      echo "          fetch-depth: 0"
       # Dedent to the list marker; a line shallower than that (a column-zero comment) is
       # indented to the marker instead of cut. The old build step guarded itself with an
-      # output of a docs-only step that no longer exists; that clause goes.
+      # output of a docs-only step that no longer exists; that clause goes. A step that
+      # ran one of the old template's scripts is dropped, with the comments above it.
       printf '%s' "$old_ci_steps" | awk '
         { sub(/\r$/, "") }
         /^[[:space:]]*$/ { next }
         { match($0, /^[[:space:]]*/); ind = RLENGTH; if ($0 ~ /^[[:space:]]*- /) { if (min == "" || ind < min) min = ind }; lines[++n] = $0; inds[n] = ind }
-        END { for (i = 1; i <= n; i++) { l = lines[i]; if (inds[i] >= min) l = substr(l, min + 1); else { sub(/^[[:space:]]*/, "", l) }
-                sub(/ *&& *steps\.docs-only\.outputs\.docs_only *!= *'"'"'true'"'"'/, "", l)
-                print "      " l } }'
+        END {
+          for (i = 1; i <= n; i++) {
+            l = lines[i]; if (inds[i] >= min) l = substr(l, min + 1); else { sub(/^[[:space:]]*/, "", l) }
+            sub(/ *&& *steps\.docs-only\.outputs\.docs_only *!= *'"'"'true'"'"'/, "", l)
+            if (l ~ /^- /) { flush(); step = l "\n"; instep = 1; drop = (l ~ /\.t-workflow\/scripts\//) }
+            else if (l ~ /^#/) { flush(); lead = lead l "\n" }          # a comment at the list level belongs to the next step
+            else if (instep) { step = step l "\n"; if (l ~ /\.t-workflow\/scripts\//) drop = 1 }
+            else { lead = lead l "\n" }
+          }
+          flush(); if (lead != "") printf "%s", lead   # a trailing comment with no step after it is kept
+        }
+        function flush() { if (step != "") { if (!drop) printf "%s%s", lead, step; lead = ""; step = ""; drop = 0; instep = 0 } }' | sed 's/^/      /'
     } > .github/workflows/build.yml
     wrote_build=yes; note "wrote .github/workflows/build.yml from the old CI slot's steps (yours from now on)"
   fi
@@ -377,6 +395,7 @@ if [ ! -e AGENTS.md ]; then
   { echo "$pointer"; echo; echo "## Project notes"; echo
     if [ -n "${old_notes:-}" ]; then printf '%s\n' "$old_notes"; else echo "*(this repository's own session-start instructions)*"; fi
     [ -n "${old_constraints:-}" ] && { echo; echo "## Constraints"; echo; printf '%s\n' "$old_constraints"; }
+    [ -n "${old_skill_rows:-}" ] && { echo; echo "## Skills of this repository"; echo; echo "| Skill | Stage |"; echo "|---|---|"; printf '%s\n' "$old_skill_rows"; }
   } > AGENTS.md
 elif ! grep -qF '.t-workflow/AGENTS.md' AGENTS.md; then
   { echo "$pointer"; echo; cat AGENTS.md; } > AGENTS.md.new && mv AGENTS.md.new AGENTS.md
@@ -410,7 +429,10 @@ else
   prurl=$(gh pr create --title "[$id] $title" --body-file "$prbody")
 fi
 rm -f "$prbody"
-if [ "$protect" = yes ] && [ "$mode" != update ]; then .t-workflow/scripts/protect.sh || true; fi
+if [ "$protect" = yes ] && [ "$mode" != update ]; then
+  pflags=(); [ "$mode" = replace ] && pflags+=(--remove checks --remove cold-review); [ "${wrote_build:-}" = yes ] && pflags+=(--add build)
+  .t-workflow/scripts/protect.sh ${pflags[@]+"${pflags[@]}"} || true
+fi
 note ""
 note "PR: $prurl"
 case "$mode" in
