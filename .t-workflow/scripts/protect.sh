@@ -57,22 +57,28 @@ elif printf '%s' "$existing" | jq -e '.required_status_checks == null' >/dev/nul
   # Protection exists but has no required-checks rule yet (a reviews-only rule): the
   # sub-resource cannot be patched until it is enabled, so re-send the protection with
   # every existing rule carried over and the required checks added.
-  full=$(printf '%s' "$existing" | jq -c --argjson rsc "$body" '{
+  full=$(printf '%s' "$existing" | jq -c --argjson rsc "$body" '
+    def people: {users: [.users[]?.login], teams: [.teams[]?.slug], apps: [.apps[]?.slug]};
+    {
       required_status_checks: $rsc,
       enforce_admins: (.enforce_admins.enabled // false),
-      required_pull_request_reviews: (if .required_pull_request_reviews then {
-          dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
-          require_code_owner_reviews: (.required_pull_request_reviews.require_code_owner_reviews // false),
-          required_approving_review_count: (.required_pull_request_reviews.required_approving_review_count // 0),
-          require_last_push_approval: (.required_pull_request_reviews.require_last_push_approval // false)
-        } else null end),
-      restrictions: (if .restrictions then {
-          users: [.restrictions.users[]?.login], teams: [.restrictions.teams[]?.slug], apps: [.restrictions.apps[]?.slug]
-        } else null end),
+      required_pull_request_reviews: (if .required_pull_request_reviews then (.required_pull_request_reviews | {
+          dismiss_stale_reviews: (.dismiss_stale_reviews // false),
+          require_code_owner_reviews: (.require_code_owner_reviews // false),
+          required_approving_review_count: (.required_approving_review_count // 0),
+          require_last_push_approval: (.require_last_push_approval // false)
+        } + (if .dismissal_restrictions and ((.dismissal_restrictions.users // []) + (.dismissal_restrictions.teams // []) + (.dismissal_restrictions.apps // []) | length > 0)
+             then {dismissal_restrictions: (.dismissal_restrictions | people)} else {} end)
+          + (if .bypass_pull_request_allowances then {bypass_pull_request_allowances: (.bypass_pull_request_allowances | people)} else {} end))
+        else null end),
+      restrictions: (if .restrictions then (.restrictions | people) else null end),
       allow_force_pushes: (.allow_force_pushes.enabled // false),
       allow_deletions: (.allow_deletions.enabled // false),
       required_linear_history: (.required_linear_history.enabled // false),
-      required_conversation_resolution: (.required_conversation_resolution.enabled // false)
+      required_conversation_resolution: (.required_conversation_resolution.enabled // false),
+      block_creations: (.block_creations.enabled // false),
+      lock_branch: (.lock_branch.enabled // false),
+      allow_fork_syncing: (.allow_fork_syncing.enabled // false)
     }')
   if printf '%s' "$full" | gh api -X PUT "repos/$nwo/branches/$trunk/protection" --input - >/dev/null; then
     echo "OK: required checks enabled: $(printf '%s' "$new" | tr '\n' ' ')— the existing rules carried over"
