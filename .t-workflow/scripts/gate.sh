@@ -14,14 +14,14 @@ set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 
 stage="${1:-}"; id="${2:-}"
-[ -n "$stage" ] && [ -n "$id" ] || { sed -n '2,11p' "$0" | sed 's/^# //'; exit 2; }
+[ -n "$stage" ] && [ -n "$id" ] || { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 2; }
 blocked=0
 block() { echo "BLOCKED: $*"; blocked=1; }
 cd "$TW_ROOT" || die "not in a repository"
 
 issue=$(gh issue view "$id" --json number,title,state,labels,body 2>/dev/null) || die "issue #$id not found"
 title=$(printf '%s' "$issue" | jq -r .title)
-body=$(printf '%s' "$issue" | jq -r .body)
+body=$(printf '%s' "$issue" | jq -r .body | normalize)
 state=$(printf '%s' "$issue" | jq -r .state)
 labels=$(printf '%s' "$issue" | jq -r '[.labels[].name] | join(",")')
 plans=$(printf '%s\n' "$body" | count_sections Plan)
@@ -123,19 +123,8 @@ ship)
 
   rv=$(review_verdict "$(printf '%s' "$v" | jq -c .reviews)" "$(printf '%s' "$v" | jq -r '.commits[-1].committedDate')")
   printf '%s\n' "$rv" | sed 's/^/review-/'
-  verdict=$(printf '%s\n' "$rv" | sed -n 's/^verdict: //p'); iso=$(printf '%s\n' "$rv" | sed -n 's/^isolation: //p'); fresh=$(printf '%s\n' "$rv" | sed -n 's/^fresh: //p')
-  if [ "$required" = yes ]; then
-    [ "$verdict" = none ] && block "protected diff with no cold review — run /t-review $id"
-    [ "$verdict" = not-ready ] && block "latest review is not-ready — run /t-work $id to address it"
-    [ "$verdict" = ready ] && [ "$fresh" = no ] && block "the ready review is older than the head commit — run /t-review $id again"
-    [ "$verdict" = ready ] && case "$iso" in *"same session"*) block "review isolation is 'same session'; a protected diff needs a fresh session or subagent review" ;; esac
-  else
-    [ "$verdict" = not-ready ] && block "latest review is not-ready — run /t-work $id to address it"
-    [ "$verdict" = ready ] && [ "$fresh" = no ] && echo "note: the ready review predates the head commit"
-  fi
-
-  [ "$verdict" != none ] && printf '%s\n' "$rv" | grep -q '^pending: unknown$' \
-    && block "the review has no '## Pending human checks' section, so its checks are unknown — ask the reviewer to add it (\"none\" when there are none)"
+  out=$(printf '%s\n' "$rv" | review_blocks "$required" "$id") || blocked=1
+  [ -n "$out" ] && printf '%s\n' "$out"
   m=$(printf '%s' "$v" | jq -r .mergeable); echo "mergeable: $m"
   [ "$m" = CONFLICTING ] && block "the branch conflicts with $trunk — rebase through /t-work $id"
   cur=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
