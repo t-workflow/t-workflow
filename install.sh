@@ -130,7 +130,7 @@ if [ "$pr" = yes ]; then
     [ "$mode" = replace ] && echo "- every path in \`.template-manifest.json\`, \`migrations/\`, \`.gitignore\` (markers stripped) — removed or cleaned"
     echo "### Risks"; echo "- The detected check command may be wrong: read \`.t-workflow/config\` in the diff."
     [ "$mode" = replace ] && echo "- Old local-slot content that did not map onto the new layout is listed in \`.t-workflow/REPLACED.md\` for a human to place."
-    echo "### Checks"; echo "- \`.t-workflow/scripts/ci.sh\` — record, title, plan, blockers, check 1"
+    echo "### Checks"; echo "- \`.t-workflow/scripts/ci.sh\` — record, title, plan, blockers (the project's own CI runs its build)"
     echo "### Human checks"; echo "- none"
   } > "$body"
   url=$(gh issue create --title "$title" --body-file "$body"); rm -f "$body"
@@ -188,7 +188,7 @@ if [ "$mode" = replace ]; then
   report=$(mktemp); report_used=no
   echo "# Replaced the old t-workflow" > "$report"
   echo >> "$report"; echo "Content the old local slots held that has no automatic place in the new layout. Place it by hand, then delete this file." >> "$report"
-  old_check=""; old_docs=""; old_protected=""; old_model=""; old_notes=""; old_constraints=""
+  old_check=""; old_docs=""; old_protected=""; old_model=""; old_notes=""; old_constraints=""; old_ci_steps=""; old_ci_timeout=""
   slots() { # <file>: each marked region, preceded by "@@ <last ## heading>"
     awk '/^## /{h=$0} /^[[:space:]]*#?[[:space:]]*<!-- local -->[[:space:]]*$/{on=1; print "@@ " h; next}
          /^[[:space:]]*#?[[:space:]]*<!-- \/local -->[[:space:]]*$/{on=0; next} on{print}' "$1"
@@ -202,7 +202,6 @@ if [ "$mode" = replace ]; then
       [ -n "$h" ] || h="(top of file)"
       placeholder "$buf" && return 0
       [ -z "$(printf '%s' "$buf" | grep -v '^[[:space:]]*$')" ] && return 0                       # an empty slot
-      [ "$(printf '%s' "$buf" | sed -e 's/^[[:space:]]*//' -e '/^$/d')" = "timeout-minutes: 10" ] && return 0   # the old workflows' default
       case "$kind:$h" in
         agents:"## Checks")
           # The check slot's own placeholder ("1. **(none yet — no stack exists.)** … `npm test`, …")
@@ -214,6 +213,11 @@ if [ "$mode" = replace ]; then
         agents:"## Project notes") old_notes="$buf" ;;
         constitution:"## 3. Protected surfaces") old_protected=$(printf '%s' "$buf" | grep -oE '`[^`]+`' | tr -d '`' | tr '\n' ' ' || true) ;;
         constitution:"## 4. Stack & architecture") old_constraints="$buf" ;;
+        ci:*)
+          # Workflow steps in the old slot become the project's own build workflow; a timeout is carried into it.
+          if printf '%s' "$buf" | grep -qE '^[[:space:]]*- (uses|name|run):'; then old_ci_steps="$old_ci_steps$buf"
+          elif t=$(printf '%s' "$buf" | sed -n 's/^[[:space:]]*timeout-minutes:[[:space:]]*\([0-9]*\).*/\1/p' | head -1) && [ -n "$t" ]; then old_ci_timeout="$t"
+          else { echo; echo "## $f — $h"; echo; echo '```'; printf '%s\n' "$buf"; echo '```'; } >> "$report"; report_used=yes; fi ;;
         *) { echo; echo "## $f — $h"; echo; echo '```'; printf '%s\n' "$buf"; echo '```'; } >> "$report"; report_used=yes ;;
       esac
     }
@@ -257,6 +261,33 @@ if [ -n "$report" ]; then
 fi
 note "installed the owned set"
 
+# --- replace: the project's own build workflow, from the old ci slot ----------------
+# Written once, only when absent; from then on it is the project's file like any other.
+if [ -n "${old_ci_steps:-}" ] && [ ! -f .github/workflows/build.yml ]; then
+  mkdir -p .github/workflows
+  {
+    echo "# This project's build. Written once by t-workflow's installer from the old workflow's"
+    echo "# slot; it is this project's own file and no update touches it."
+    echo "name: build"
+    echo "on:"
+    echo "  pull_request:"
+    echo "  push:"
+    echo "    branches: [$trunk]"
+    echo "jobs:"
+    echo "  build:"
+    echo "    runs-on: ubuntu-latest"
+    echo "    timeout-minutes: ${old_ci_timeout:-30}"
+    echo "    steps:"
+    echo "      - uses: actions/checkout@v4"
+    printf '%s' "$old_ci_steps" | awk '
+      { sub(/\r$/, "") }
+      /^[[:space:]]*$/ { next }
+      { match($0, /^[[:space:]]*/); ind = RLENGTH; if ($0 ~ /^[[:space:]]*- /) { if (min == "" || ind < min) min = ind }; lines[++n] = $0 }
+      END { for (i = 1; i <= n; i++) print "      " substr(lines[i], min + 1) }'
+  } > .github/workflows/build.yml
+  note "wrote .github/workflows/build.yml from the old CI slot's steps (yours from now on)"
+fi
+
 # --- consumer-owned files, created only when absent --------------------------------
 detect_check() {
   if [ -f package.json ]; then echo "npm test"
@@ -275,7 +306,8 @@ default_config() {
 # t-workflow configuration. Owned by this repository; never touched by an update.
 # Shell syntax: key="value". Read by .t-workflow/scripts/*.
 
-# Build/test command, run as check 1 (empty = no check 1 yet).
+# Build/test command the agent runs locally before opening a PR (empty = none yet).
+# CI does not run it; the project's own CI does.
 check=""
 
 # Extra protected globs, space-separated, on top of the built-in set
@@ -286,7 +318,7 @@ protected=""
 # (e.g. "site/*"). A documentation-only diff skips check 1.
 docs=""
 
-# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.
+# Branch globs exempt from the task gates in CI (e.g. "dependabot/*").
 exempt=""
 
 # Model /t-review's subagent reviewer runs under (empty = the invoking session's own).

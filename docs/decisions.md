@@ -3,6 +3,15 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-09 — The build is not t-workflow's
+
+t-workflow's CI job runs the workflow gates only. A project's build needs the runner
+set up — a Java version, a cache — and the first adoption of a real project failed on
+exactly that. Owning the build meant owning its environment through a hook or a slot,
+which is the coupling the old template had. The build stays in the project's own CI,
+the ship gate watches every check on the PR, and the config's check command is what
+the agent runs locally.
+
 ## 2026-09-09 — One CI run per commit; the review re-runs it
 
 A protected diff's CI run is red until its cold review exists. Triggering a second run

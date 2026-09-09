@@ -50,12 +50,14 @@ globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executa
 
 ## Checks
 
-1. The `check` command in `.t-workflow/config`, skipped when the whole diff is
-   documentation (`.t-workflow/scripts/docs-only.sh`). No command configured → say so.
+1. The `check` command in `.t-workflow/config`, run locally before a PR is opened,
+   skipped when the whole diff is documentation (`.t-workflow/scripts/docs-only.sh`).
+   No command configured → say so.
 2. `git diff <trunk>...HEAD`, read against the task's scope.
 
-CI runs `.t-workflow/scripts/ci.sh` on every PR: record, title, plan, review, and
-blocker rules, then check 1.
+CI runs `.t-workflow/scripts/ci.sh` on every PR: the record, title, plan, review, and
+blocker rules only. The project's build runs in the project's own CI; the ship gate
+watches every check on the PR.
 
 ## Communication
 

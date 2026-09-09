@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Everything CI checks on a pull request, in one job (.github/workflows/t-workflow.yml).
-# Environment: BASE_REF, HEAD_REF, PR_NUMBER, PR_TITLE, GH_TOKEN. Runs locally too with
-# those set. Every check runs even after one fails; exit 1 when any failed.
+# Everything t-workflow's CI checks on a pull request, in one job
+# (.github/workflows/t-workflow.yml): the workflow gates only — record, title, plan,
+# review, blockers. The project's build is not run here; it belongs to the project's own
+# CI, and the ship gate watches every check on the PR. Environment: BASE_REF, HEAD_REF,
+# PR_NUMBER, PR_TITLE, GH_TOKEN. Every check runs even after one fails; exit 1 when any failed.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 cd "$TW_ROOT" || die "not in a repository"
@@ -53,11 +55,5 @@ else
   fi
 fi
 
-# Check 1
-if [ -z "$check" ]; then ok "no check command configured (config: check)"
-elif printf '%s\n' "$changed" | "$TW_SCRIPTS/docs-only.sh" >/dev/null; then ok "check 1 skipped: documentation-only diff"
-else
-  echo "running check 1: $check"
-  if bash -c "$check"; then ok "check 1 passed: $check"; else fail "check 1 failed: $check"; fi
-fi
+echo "check 1 (the project's build) is not run here; the project's own CI runs it"
 exit "$rc"

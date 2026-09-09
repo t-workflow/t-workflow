@@ -151,6 +151,7 @@ grep -q '^check=""' .t-workflow/config && ok || bad "install: pristine config, n
 head -1 AGENTS.md | grep -q '.t-workflow/AGENTS.md' && ok || bad "install: AGENTS.md pointer"
 for p in .t-workflow/scripts/gate.sh .claude/skills/t-work/SKILL.md .github/workflows/t-workflow.yml docs/tasks/TEMPLATE.md; do [ -e "$p" ] || bad "install: missing $p"; done; ok
 [ ! -e tests ] && [ ! -e install.sh ] && [ ! -e CHANGELOG.md ] && ok || bad "install: repo-only files leaked"
+[ ! -e .github/workflows/build.yml ] && ok || bad "install: adopt writes no build workflow"
 # a real CLAUDE.md becomes AGENTS.md with the pointer prepended
 mkdir -p "$tmp/c" && (cd "$tmp/c" && git init -q -b main && printf '# App\nDo X.\n' > CLAUDE.md && echo '{}' > package.json && git add -A && git commit -qm i)
 bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: with CLAUDE.md"
@@ -194,7 +195,10 @@ bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/d" --no-pr >/dev/null 2>&1
 grep -q '^check="make test"' .t-workflow/config && grep -q '^protected="db/migrate/"' .t-workflow/config && grep -q '^docs="site/\*\*"' .t-workflow/config && grep -q '^reviewer_model="opus"' .t-workflow/config && ok || bad "replace: slots into config: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
 grep -q '^Use rubocop.$' AGENTS.md && grep -q '^- Rails only.$' AGENTS.md && ok || bad "replace: notes and constraints into AGENTS.md"
 grep -q '^\.env$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace: gitignore kept, markers stripped"
-grep -q 'make lint' .t-workflow/REPLACED.md && ! grep -q 'consumer-local skills' .t-workflow/REPLACED.md && ok || bad "replace: ci slot reported, placeholder not"
+[ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 1 ] && grep -q 'CONSTITUTION.md' .t-workflow/REPLACED.md && ! grep -q 'make lint' .t-workflow/REPLACED.md && ok || bad "replace: only the status note is left to report once the ci slot became build.yml: $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
+b=.github/workflows/build.yml
+grep -q '^      - uses: actions/checkout@v4$' $b && grep -q '^      - run: make lint$' $b && grep -q '^    branches: \[main\]$' $b && ok || bad "replace: build.yml written from the ci slot: $(cat $b)"
+[ "$(sed -n 's/^\(name\|on\|jobs\):.*/&/p' $b | wc -l)" = 3 ] && ok || bad "replace: build.yml has name, on, jobs"
 [ -L CLAUDE.md ] && [ -L .agents/skills ] && ok || bad "replace: aliases restored"
 printf '{"files":{}}' > .template-manifest.json
 out=$(bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/d" --no-pr 2>&1); has "$out" "lists no files" && ok || bad "replace: refuses an empty manifest"
@@ -219,8 +223,7 @@ for p in .claude/skills/l-mine/SKILL.md .github/workflows/deploy.yml .github/ISS
 [ -f .claude/skills/t-work/SKILL.md ] && grep -q '^name: t-work' .claude/skills/t-work/SKILL.md && ok || bad "replace (no manifest): old t-work replaced by the new one"
 grep -q '^check=""' .t-workflow/config && grep -q '^reviewer_model=""' .t-workflow/config && ok || bad "replace (no manifest): placeholder slots leave config at defaults: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
 head -1 AGENTS.md | grep -q t-workflow && ! grep -q 'reserved' AGENTS.md && ok || bad "replace (no manifest): AGENTS.md rebuilt without placeholders"
-grep -q 'my-check' .t-workflow/REPLACED.md && grep -q 'make lint' .t-workflow/REPLACED.md && ok || bad "replace (no manifest): required-checks.local and the ci slot reported"
-! grep -q 'timeout-minutes' .t-workflow/REPLACED.md && [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 3 ] && ok || bad "replace (no manifest): default timeouts and empty slots are not reported (status note, ci slot, required-checks expected): $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
+! grep -q 'timeout-minutes' .t-workflow/REPLACED.md && [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 2 ] && ok || bad "replace (no manifest): timeouts and empty slots are not reported (status note and required-checks expected): $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
 [ -L CLAUDE.md ] && [ -L .github/copilot-instructions.md ] && [ -L .agents/skills ] && ok || bad "replace (no manifest): aliases kept"
 grep -q '^node_modules$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace (no manifest): gitignore kept, markers stripped"
 out=$(bash "$ROOT/install.sh" v4 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1); has "$out" 'mode: update' && ok || bad "after replace, the next run is an update: $out"
@@ -236,7 +239,7 @@ mkdir -p "$tmp/bin"; printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/gh"; chmod +x "$tm
 ci() { BASE_REF=main HEAD_REF="$1" PR_NUMBER=1 PR_TITLE="$2" GH_TOKEN=x PATH="$tmp/bin:$PATH" "$S/ci.sh" 2>&1; }
 # base (origin/main) has no t-workflow yet: adoption PR
 out=$(ci wip/5-thing "[5] Thing"); has "$out" 'adoption PR' && ok || bad "ci: base without t-workflow is an adoption PR: $out"
-has "$out" 'no check command configured' && ok || bad "ci: no check configured"
+has "$out" "is not run here" && ok || bad "ci: says the build is not run here"
 # now the base carries t-workflow: the gates are in force
 git push -q origin main; git fetch -q origin
 git checkout -q -b wip/5-thing
@@ -244,63 +247,13 @@ sed 's/7/5/g; s/Fixture/Thing/; s/<the goal, from the issue>/Do it./; s/^## Ask$
 echo x > file.txt; git add -A; git commit -qm work
 out=$(ci wip/5-thing "Thing")
 has "$out" 'OK: record docs/tasks/5-thing.md' && ok || bad "ci: record ok: $out"
-has "$out" "FAIL: PR title must start with '\[5\] '" && ok || bad "ci: title fail: $out"
+has "$out" "FAIL: PR title must start with '\\[5\\] '" && ok || bad "ci: title fail: $out"
 has "$out" 'FAIL: cannot read issue #5' && ok || bad "ci: tracker unreachable is a failure, not a pass"
 out=$(ci feature/x x); has "$out" 'is not wip/<id>-<slug>' && ok || bad "ci: non-task branch fails"
 sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config
 out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch"
-sedi 's|^check=""|check="test -f file.txt"|' .t-workflow/config
-out=$(ci feature/x x); has "$out" 'check 1 passed' && ok || bad "ci: check 1 runs and passes: $out"
-sedi 's|^check=.*|check="false"|' .t-workflow/config
-if ci feature/x x >/dev/null; then bad "ci: failing check 1 must fail"; else ok; fi
-git checkout -q -- . 2>/dev/null; git checkout -q main; git checkout -q -b wip/6-docs; echo "# 6 — Docs" > docs/tasks/6-docs.md; git add -A; git commit -qm docs
-sedi 's|^check=.*|check="false"|' .t-workflow/config
-out=$(ci wip/6-docs "[6] Docs"); has "$out" 'check 1 skipped: documentation-only diff' && ok || bad "ci: docs-only skip: $out"
-
-echo "# rerun-ci.sh (stubbed gh)"
-mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'
-#!/usr/bin/env bash
-# stub gh: $PRVIEW is `pr view`'s JSON (empty = fail), $RUNS is `run list`'s JSON (empty = fail),
-# every `run rerun` id is appended to $RERUNS. The exact flag shapes the script relies on are checked.
-case "$1 $2" in
-  "pr view") [ -n "${PRVIEW:-}" ] || exit 1; [[ "$*" == *"--json headRefOid,isDraft"* ]] || { echo "stub: unexpected pr view flags: $*" >&2; exit 9; }; printf '%s' "$PRVIEW" ;;
-  "run list") [ -n "${RUNS:-}" ] || exit 1; [[ "$*" == *"--workflow t-workflow"* && "$*" == *"--commit abc123"* && "$*" == *"--json databaseId,status,conclusion"* ]] || { echo "stub: unexpected run list flags: $*" >&2; exit 9; }; printf '%s' "$RUNS" ;;
-  "run rerun") echo "$3" >> "$RERUNS"; [ "${RERUN_FAILS:-}" = 1 ] && exit 1; exit 0 ;;
-  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
-esac
-STUB
-chmod +x "$tmp/gh2/gh"; export RERUNS="$tmp/reruns"; : > "$RERUNS"
-cd "$tmp/b"; export PRVIEW='{"headRefOid":"abc123","isDraft":false}'
-rr() { PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1; }
-out=$(PRVIEW='{"headRefOid":"abc123","isDraft":true}' rr); has "$out" 'is a draft' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: draft PR needs no re-run: $out"
-out=$(RUNS='[]' rr); has "$out" 'no t-workflow run at abc123' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run: $out"
-out=$(RUNS='[{"databaseId":9,"status":"in_progress","conclusion":null}]' rr); has "$out" 'still in_progress; if it ends red, run this again' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: in progress: $out"
-out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"success"}]' rr); has "$out" 'already green' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: green is a no-op: $out"
-out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"skipped"}]' rr); has "$out" 'was skipped.*nothing to re-run' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: skipped run is not re-run: $out"
-out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"},{"databaseId":8,"status":"completed","conclusion":"success"}]' rr)
-has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the newest red run: $out / $(cat "$RERUNS")"
-out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 rr); rc=$?
-[ "$rc" -eq 1 ] && has "$out" 'could not re-run' && ok || bad "rerun-ci: reports a failed re-run (exit $rc): $out"
-out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok || bad "rerun-ci: a failed run list is an error, not 'no run' (exit $rc): $out"
-out=$(PRVIEW='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot read PR' && ok || bad "rerun-ci: unreadable PR (exit $rc): $out"
-grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
-
-echo "# issue.sh children / blocking (stubbed gh, GitHub's real shape)"
-mkdir -p "$tmp/gh3"
-cat > "$tmp/gh3/gh" <<'STUB'
-#!/usr/bin/env bash
-# stub gh: returns GitHub's real JSON for the two fields, then applies the --jq expression the script passed
-args=("$@"); expr=""; for i in "${!args[@]}"; do [ "${args[$i]}" = "--jq" ] && expr="${args[$((i+1))]}"; done
-case "$*" in
-  *"--json subIssues"*) json='{"subIssues":{"nodes":[{"id":"I_1","number":8,"state":"OPEN","title":"Step 1","url":"u"},{"id":"I_2","number":9,"state":"CLOSED","title":"Step 2","url":"u"}]}}' ;;
-  *"--json blocking"*)  json='{"blocking":{"nodes":[{"id":"I_3","number":21,"state":"OPEN","title":"Step 14","url":"u"}]}}' ;;
-  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
-esac
-if [ -n "$expr" ]; then printf '%s' "$json" | jq -c "$expr"; else printf '%s' "$json"; fi
-STUB
-chmod +x "$tmp/gh3/gh"
-out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" children 7 2>&1); [ "$out" = '[{"number":8,"title":"Step 1","state":"OPEN"},{"number":9,"title":"Step 2","state":"CLOSED"}]' ] && ok || bad "issue.sh children: $out"
-out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" blocking 9 2>&1); [ "$out" = '[{"number":21,"title":"Step 14","state":"OPEN"}]' ] && ok || bad "issue.sh blocking: $out"
+sedi 's|^check=""|check="false"|' .t-workflow/config
+if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
 
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
