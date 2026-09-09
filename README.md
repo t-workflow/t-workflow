@@ -42,7 +42,7 @@ installer prints, are the changelog. A release is a tag; nothing else.
 | `.t-workflow/AGENTS.md` | t-workflow — the contract, about 3 KB, read at session start |
 | `.t-workflow/scripts/` | t-workflow — gates, CI, record, snapshot |
 | `.claude/skills/t-*/` and the `.agents/skills` symlink | t-workflow — nine skills |
-| `.github/workflows/t-workflow.yml` | t-workflow — runs `ci.sh` on every PR |
+| `.github/workflows/t-workflow.yml` | t-workflow — runs the workflow gates on every PR; your build stays in your own CI |
 | `docs/tasks/TEMPLATE.md` | t-workflow — the record shape |
 | `.t-workflow/VERSION` | t-workflow — the installed tag |
 | `.t-workflow/config` | **you** — check command, protected paths, exempt branches, reviewer model |
@@ -70,7 +70,8 @@ The rules are in [`.t-workflow/AGENTS.md`](.t-workflow/AGENTS.md). Protected pat
 (the workflow's own files, CI, the instruction files, plus whatever `config` adds) need
 a plan before and a cold review after; everything else needs an issue, a record, and a
 confirmed merge. CI enforces the record, title, plan, review, and blocker rules
-mechanically, then runs your check command unless the diff is documentation only.
+mechanically. Your build runs in your own CI, as before; the check command in the
+config is what the agent runs locally before opening a PR.
 
 ## This repository
 

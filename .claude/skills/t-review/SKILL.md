@@ -34,9 +34,11 @@ it. Decide the isolation line first:
    not whether it is right, which is the human's call.
 3. Checks: `pr.files` through `.t-workflow/scripts/protected.sh` (exit 0 = protected)
    and `docs-only.sh`. A check may be reported as reused only when `## Checks run`
-   names that exact command at a sha equal to `pr.headRefOid`, or CI is green at that
-   sha; anything less → run it yourself. A claimed documentation-only skip is verified
-   by running `docs-only.sh` on `pr.files`, never reused.
+   names that exact command at a sha equal to `pr.headRefOid`, or the project's own CI
+   ran that same command at that sha (read its workflow to be sure — t-workflow's own
+   job runs the gates, never the build); anything less → run it yourself. A claimed
+   documentation-only skip is verified by running `docs-only.sh` on `pr.files`, never
+   reused.
 4. Severity. Blocker or high, never lower: a failed check, an unauthorized removal, a
    path outside scope, a protected path with no `## Plan`. Only blocker and high hold
    the verdict; medium and low are posted for the human to decide.

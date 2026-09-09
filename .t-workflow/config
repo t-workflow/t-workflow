@@ -1,7 +1,8 @@
 # t-workflow configuration. Owned by this repository; never touched by an update.
 # Shell syntax: key="value". Read by .t-workflow/scripts/*.
 
-# Build/test command, run as check 1 (empty = no check 1 yet).
+# Build/test command the agent runs locally before opening a PR (empty = none yet).
+# CI does not run it; the project's own CI does.
 check="tests/test.sh"
 
 # Extra protected globs, space-separated, on top of the built-in set
@@ -12,7 +13,7 @@ protected=""
 # (e.g. "site/*"). A documentation-only diff skips check 1.
 docs=""
 
-# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.
+# Branch globs exempt from the task gates in CI (e.g. "dependabot/*").
 exempt=""
 
 # Model /t-review's subagent reviewer runs under (empty = the invoking session's own).

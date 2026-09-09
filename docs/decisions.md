@@ -3,6 +3,15 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-09 — The build is not t-workflow's
+
+t-workflow's CI job runs the workflow gates only. A project's build needs the runner
+set up — a Java version, a cache — and the first adoption of a real project failed on
+exactly that. Owning the build meant owning its environment through a hook or a slot,
+which is the coupling the old template had. The build stays in the project's own CI,
+the ship gate watches every check on the PR, and the config's check command is what
+the agent runs locally.
+
 ## 2026-09-09 — One CI run per commit; the review re-runs it
 
 A protected diff's CI run is red until its cold review exists. Triggering a second run
@@ -58,8 +67,8 @@ only correlation key.
 
 ## 2026-09-08 — An adoption PR is not under the rules it introduces
 
-`ci.sh` checks whether the base branch already has `.t-workflow/VERSION`. If not, only
-check 1 runs. An update PR is a protected diff like any other.
+`ci.sh` checks whether the base branch already has the contract file. If not, the task
+gates are not in force on that PR. An update PR is a protected diff like any other.
 
 ## 2026-09-08 — Size is reported, not asserted
 
