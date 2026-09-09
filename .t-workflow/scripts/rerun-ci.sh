@@ -22,7 +22,7 @@ if [ "$status" != completed ]; then
 fi
 case "$conclusion" in
   success) echo "run $id at $head is already green; nothing to do"; exit 0 ;;
-  skipped) echo "run $id at $head was skipped (the PR was a draft then); CI runs when /t-ship marks it ready"; exit 0 ;;
+  skipped) echo "run $id at $head was skipped (the PR was a draft then); nothing to re-run"; exit 0 ;;
 esac
 if gh run rerun "$id"; then echo "re-running t-workflow run $id at $head (was $conclusion)"
 else echo "could not re-run run $id; re-run it from the Actions tab, or push again"; exit 1; fi

@@ -11,7 +11,8 @@ Read `.t-workflow/AGENTS.md`.
    with the command it names. Keep the output: it is the evidence for step 4.
 2. `gh pr ready <pr>`. CI starts here (drafts skip it). A PR that was already ready may
    carry a run that went red before its review existed: `.t-workflow/scripts/rerun-ci.sh <pr>`
-   re-runs it (a no-op when green). Then `gh pr checks <pr> --watch`.
+   re-runs it (a no-op unless a completed run at the head is red). Then
+   `gh pr checks <pr> --watch`.
    No CI configured → say so and continue. Red → `gh pr ready <pr> --undo`, report
    which check failed, name `/t-work <id>`. Stop.
 3. Do not edit anything. A defect noticed here is a finding for the report, not a fix.

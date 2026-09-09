@@ -209,7 +209,7 @@ out=$(PRVIEW='{"headRefOid":"abc123","isDraft":true}' rr); has "$out" 'is a draf
 out=$(RUNS='[]' rr); has "$out" 'no t-workflow run at abc123' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run: $out"
 out=$(RUNS='[{"databaseId":9,"status":"in_progress","conclusion":null}]' rr); has "$out" 'still in_progress; if it ends red, run this again' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: in progress: $out"
 out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"success"}]' rr); has "$out" 'already green' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: green is a no-op: $out"
-out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"skipped"}]' rr); has "$out" 'was skipped' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: skipped run is not re-run: $out"
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"skipped"}]' rr); has "$out" 'was skipped.*nothing to re-run' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: skipped run is not re-run: $out"
 out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"},{"databaseId":8,"status":"completed","conclusion":"success"}]' rr)
 has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the newest red run: $out / $(cat "$RERUNS")"
 out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 rr); rc=$?
