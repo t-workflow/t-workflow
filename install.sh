@@ -282,7 +282,7 @@ if [ -n "${old_ci_steps:-}" ]; then
                 sub(/ *&& *steps\.docs-only\.outputs\.docs_only *!= *'"'"'true'"'"'/, "", l)
                 print "      " l } }'
     } > .github/workflows/build.yml
-    note "wrote .github/workflows/build.yml from the old CI slot's steps (yours from now on)"
+    wrote_build=yes; note "wrote .github/workflows/build.yml from the old CI slot's steps (yours from now on)"
   fi
 fi
 
@@ -348,9 +348,15 @@ if [ ! -f .t-workflow/config ]; then
 else
   # A release may add a key: append what this config lacks, with its comment, leaving present values alone.
   def=$(mktemp); default_config > "$def"
-  # Earlier releases' default comments said CI runs the check; rewrite those exact lines, values untouched.
-  sed -i.bak -e 's|^# Build/test command, run as check 1 (empty = no check 1 yet)\.$|# Build/test command the agent runs locally before opening a PR (empty = none yet).\n# CI does not run it; the project'"'"'s own CI does.|' \
-             -e 's|^# Branch globs exempt from the task gates in CI (e\.g\. "dependabot/\*")\. Check 1 still runs\.$|# Branch globs exempt from the task gates in CI (e.g. "dependabot/*").|' .t-workflow/config
+  # Earlier releases' default comments said CI runs the check; rewrite those exact lines, values
+  # untouched. awk, not sed: a newline in a sed replacement is not portable to macOS.
+  awk '
+    $0 == "# Build/test command, run as check 1 (empty = no check 1 yet)." {
+      print "# Build/test command the agent runs locally before opening a PR (empty = none yet)."
+      print "# CI does not run it; the project'"'"'s own CI does."; next }
+    $0 == "# Branch globs exempt from the task gates in CI (e.g. \"dependabot/*\"). Check 1 still runs." {
+      print "# Branch globs exempt from the task gates in CI (e.g. \"dependabot/*\")."; next }
+    { print }' .t-workflow/config > .t-workflow/config.new && mv .t-workflow/config.new .t-workflow/config
   rm -f .t-workflow/config.bak
   [ -z "$(tail -c1 .t-workflow/config)" ] || echo >> .t-workflow/config   # end with a newline before appending
   for key in $(grep -oE '^[a-z_]+=' "$def" | tr -d =); do
@@ -392,7 +398,10 @@ prbody=$(mktemp)
 {
   echo "Closes #$id"; echo
   echo "$title. Every t-workflow-owned file is the release's copy; \`.t-workflow/config\` and \`AGENTS.md\` are this repository's own."
-  [ "$mode" = replace ] && echo "Old local-slot content with no automatic home is in \`.t-workflow/REPLACED.md\`."
+  if [ "$mode" = replace ]; then
+    [ "${wrote_build:-}" = yes ] && echo "The old workflow's build steps are now this project's own \`.github/workflows/build.yml\`."
+    [ -f .t-workflow/REPLACED.md ] && echo "Old local-slot content with no automatic home is in \`.t-workflow/REPLACED.md\`."
+  fi
   echo; echo "## Checks run"; echo "- \`.t-workflow/scripts/ci.sh\` — runs on this PR"
 } > "$prbody"
 if [ "$mode" = update ]; then
