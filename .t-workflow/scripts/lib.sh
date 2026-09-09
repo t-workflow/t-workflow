@@ -99,6 +99,6 @@ review_verdict() {
   echo "isolation: $(printf '%s' "$body" | grep -oE '^isolation:.*' | head -1 | sed 's/^isolation: *//' || true)"
   if [ -n "$head_time" ] && [ "$at" \> "$head_time" ]; then echo "fresh: yes"; else echo "fresh: no"; fi
   local pending
-  pending=$(printf '%s\n' "$body" | section "Pending human checks" | grep -v '^\s*$' || true)
+  pending=$(printf '%s\n' "$body" | section "Pending human checks" | sed '/^readiness:/,$d' | grep -v '^[[:space:]]*$' || true)
   if [ -z "$pending" ]; then echo "pending: unknown"; else echo "pending:"; printf '%s\n' "$pending" | sed 's/^/  /'; fi
 }

@@ -94,6 +94,9 @@ echo "# lib.sh helpers"
 printf '## A\none\n## Plan\nallowed\n\n## B\nb\n' | section Plan | grep -q '^allowed$' && ok || bad "section extracts a body"
 [ "$(printf '## Plan\n## Plan\n' | count_sections Plan)" = 2 ] && ok || bad "count_sections"
 reviews='[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Pending human checks\n- none\nreadiness: ready"},{"submittedAt":"2026-01-02T00:00:00Z","body":"isolation: fresh session\nreadiness: not-ready"}]'
+rvp=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Findings\n- x\n## Pending human checks\n- check the colours\nreadiness: ready"}]' "")
+has "$rvp" '^  - check the colours$' && ok || bad "review_verdict: pending checks listed"
+printf '%s' "$rvp" | grep -q 'readiness' && bad "review_verdict: readiness line leaks into pending checks" || ok
 rv=$(review_verdict "$reviews" "2026-01-01T12:00:00Z"); rv3=$(review_verdict "$reviews" "2026-01-03T00:00:00Z"); rv0=$(review_verdict '[]' "")
 has "$rv" '^verdict: not-ready$' && ok || bad "review_verdict: latest wins"
 has "$rv3" '^fresh: no$' && ok || bad "review_verdict: stale when head is newer"
@@ -118,8 +121,23 @@ grep -q '^check="npm test"' "$tmp/c/.t-workflow/config" && ok || bad "install: c
 out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1); has "$out" "already at v1" && ok || bad "install: same tag is a no-op"
 # update keeps consumer-owned files, replaces owned ones
 (cd "$tmp/c" && echo 'hand edit' >> .claude/skills/t-open/SKILL.md && sedi 's/^check=.*/check="mine"/' .t-workflow/config && echo "mine" >> AGENTS.md && git add -A && git commit -qm c)
-bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update"
+(cd "$tmp/c" && grep -v '^exempt=' .t-workflow/config | perl -pe 'chomp if eof' > cfg && mv cfg .t-workflow/config && git add -A && git commit -qm "drop a key")
+out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update: $out"
 (cd "$tmp/c" && [ "$(cat .t-workflow/VERSION)" = v2 ] && grep -q '^check="mine"' .t-workflow/config && grep -q '^mine$' AGENTS.md && ! grep -q 'hand edit' .claude/skills/t-open/SKILL.md) && ok || bad "install: update replaced owned files and kept consumer ones"
+(cd "$tmp/c" && grep -q '^exempt=""' .t-workflow/config && grep -B1 '^exempt=""' .t-workflow/config | head -1 | grep -q '^# Branch globs') && has "$out" 'config: added exempt' && ok || bad "install: update appends a missing config key with its comment"
+[ "$(grep -c '^check=' "$tmp/c/.t-workflow/config")" = 1 ] && ok || bad "install: update does not duplicate present keys"
+(cd "$tmp/c" && grep -B1 '^# Branch globs' .t-workflow/config | head -1 | grep -q '^$') && ok || bad "install: appended key is separated by a blank line even when the config lacked a trailing newline"
+# a git source: no tag means the newest tag; a tag means that tag
+git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v0.0.1 && git -C "$tmp/src.git" tag v0.0.10 && git -C "$tmp/src.git" tag v0.0.2 && git -C "$tmp/src.git" tag rel/v0.0.3
+mkdir -p "$tmp/f" && (cd "$tmp/f" && git init -q -b main && git commit -q --allow-empty -m i)
+out=$(bash "$ROOT/install.sh" --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, no tag: $out"
+[ "$(cat "$tmp/f/.t-workflow/VERSION")" = v0.0.10 ] && ok || bad "install: newest tag by version order, got $(cat "$tmp/f/.t-workflow/VERSION")"
+out=$(bash "$ROOT/install.sh" v0.0.2 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, explicit tag: $out"
+[ "$(cat "$tmp/f/.t-workflow/VERSION")" = v0.0.2 ] && has "$out" 'changes from v0.0.10 to v0.0.2' && ok || bad "install: explicit tag and log between tags"
+out=$(bash "$ROOT/install.sh" rel/v0.0.3 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: tag with a slash: $out"
+[ "$(cat "$tmp/f/.t-workflow/VERSION")" = rel/v0.0.3 ] && ok || bad "install: a tag containing / is kept whole, got $(cat "$tmp/f/.t-workflow/VERSION")"
+out=$(bash "$ROOT/install.sh" --from "$ROOT" --dir "$tmp/f" --no-pr 2>&1); has "$out" 'a tag is required' && ok || bad "install: local directory needs a tag"
+out=$(bash "$ROOT/install.sh" --from "file://$tmp/nowhere.git" --dir "$tmp/f" --no-pr 2>&1); has "$out" 'could not list tags' && ok || bad "install: unreachable source reports the real failure, not 'no tags': $out"
 # replace: the old template layout with a manifest and filled slots
 mkdir -p "$tmp/d/.github/workflows" "$tmp/d/.claude/skills/t-config" "$tmp/d/.claude/skills/l-mine" "$tmp/d/.t-workflow/scripts" "$tmp/d/migrations" "$tmp/d/docs/adr" "$tmp/d/docs/tasks/000100"
 cd "$tmp/d" && git init -q -b main

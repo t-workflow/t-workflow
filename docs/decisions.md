@@ -3,6 +3,14 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-08 — A release is a tag; the tree never names a version
+
+The README installs from `main` and the installer resolves the newest tag. There is no
+changelog and no release notes: the update PR's diff and `git log` between tags say
+what changed, and the installer appends missing config keys so a release never needs a
+hand step. `.t-workflow/VERSION` exists only in consumers, written from the installed
+tag. Anything else would need a task per release to keep it true.
+
 ## 2026-09-08 — Start over rather than trim the old template
 
 The old `haninaguib-devtools/t-workflow` had grown to 82 consumer files and 725 KB,
