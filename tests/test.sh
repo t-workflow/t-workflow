@@ -235,10 +235,10 @@ grep -q '^      # a trailing note$' .github/workflows/build.yml && ok || bad "re
 b=.github/workflows/build.yml
 grep -q '^      - uses: actions/checkout@v4$' $b && grep -q '^      - uses: actions/setup-java@v4$' $b && grep -q '^          java-version: 21$' $b && grep -q '^      - run: make lint$' $b && grep -q '^        run: make test$' $b && grep -q '^    branches: \[main\]$' $b && ok || bad "replace: build.yml written from the ci slot: $(cat $b)"
 grep -q '^      # a column-zero comment$' $b && ok || bad "replace: a column-zero comment in the slot is indented, not mangled: $(grep -n comment $b)"
-! grep -q 'check-manifest' $b && ! grep -q 'manifest lock' $b && grep -q '^      - name: Build$' $b && ok || bad "replace: a step running an old script is dropped with its comment, the rest kept: $(grep -n 'manifest\|Build' $b)"
+! grep -q 'check-manifest' $b && ! grep -q 'manifest lock' $b && grep -q '^      - name: Build$' $b && ok || bad "replace: a step running an old script is dropped with its comment, the rest kept: $(grep -nE 'manifest|Build' $b)"
 grep -A2 '^      - uses: actions/checkout@v4$' $b | grep -q '^          fetch-depth: 0$' && ok || bad "replace: the generated checkout has full depth"
 grep -q "if: \"!cancelled()\"$" $b && ! grep -q 'docs-only' $b && ok || bad "replace: the old docs-only output reference is dropped from if: lines: $(grep 'if:' $b)"
-[ "$(sed -n 's/^\(name\|on\|jobs\):.*/&/p' $b | wc -l)" = 3 ] && ok || bad "replace: build.yml has name, on, jobs"
+[ "$(grep -cE '^(name|on|jobs):' $b)" = 3 ] && ok || bad "replace: build.yml has name, on, jobs"
 [ -L CLAUDE.md ] && [ -L .agents/skills ] && ok || bad "replace: aliases restored"
 (cd "$tmp/d" && git add -A && git commit -qm installed-v3) >/dev/null 2>&1
 printf '{"files":{}}' > .template-manifest.json

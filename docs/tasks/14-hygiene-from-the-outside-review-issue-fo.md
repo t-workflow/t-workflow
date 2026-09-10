@@ -33,3 +33,4 @@ Small things an outside review found that are each cheap on their own. Listed he
 
 ## Deviations / notes
 - Re-planned after the cold review's high finding: Allowed paths grew by `.t-workflow/scripts/lib.sh`, `.t-workflow/scripts/docs-only.sh`, `.t-workflow/scripts/protected.sh` (comment plus targeted ShellCheck disable each, no behaviour change). No code changed in the fix pass; the medium/low findings stay as follow-up recommendations for the human, per fix-mode scope.
+- The new macOS leg caught a GNUism on its first run (`sed` BRE `\|` alternation and a `grep` BRE `\|` in `tests/test.sh`, both unsupported by BSD tools): replaced with POSIX `grep -E` alternations. No behaviour change on Linux.
