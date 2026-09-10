@@ -157,6 +157,7 @@ mkdir -p "$tmp/c" && (cd "$tmp/c" && git init -q -b main && printf '# App\nDo X.
 bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: with CLAUDE.md"
 grep -q '^Do X.$' "$tmp/c/AGENTS.md" && head -1 "$tmp/c/AGENTS.md" | grep -q t-workflow && [ -L "$tmp/c/CLAUDE.md" ] && ok || bad "install: CLAUDE.md content kept under the pointer"
 grep -q '^check="npm test"' "$tmp/c/.t-workflow/config" && ok || bad "install: check detected from package.json"
+(cd "$tmp/c" && git add -A && git commit -qm installed-v1) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1); has "$out" "already at v1" && ok || bad "install: same tag is a no-op"
 # update keeps consumer-owned files, replaces owned ones
 (cd "$tmp/c" && echo 'hand edit' >> .claude/skills/t-open/SKILL.md && sedi 's/^check=.*/check="mine"/' .t-workflow/config && echo "mine" >> AGENTS.md && git add -A && git commit -qm c)
@@ -169,13 +170,31 @@ out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || 
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update (comments)"
 (cd "$tmp/c" && grep -q '^# CI does not run it' .t-workflow/config && ! grep -q 'Check 1 still runs' .t-workflow/config && grep -q '^check="mine"' .t-workflow/config) && ok || bad "install: update rewrites the old default comments and keeps the values: $(grep -E '^#|^check=' "$tmp/c/.t-workflow/config" | head -8)"
 (cd "$tmp/c" && grep -B1 '^# Branch globs' .t-workflow/config | head -1 | grep -q '^$') && ok || bad "install: appended key is separated by a blank line even when the config lacked a trailing newline"
+# a dirty tree refuses in every mode, even with --no-pr; the plan prints first
+mkdir -p "$tmp/dirty" && (cd "$tmp/dirty" && git init -q -b main && git commit -q --allow-empty -m i && echo dirty > untracked.txt)
+out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/dirty" --no-pr 2>&1); rc=$?
+[ "$rc" -ne 0 ] && has "$out" 'not clean' && ok || bad "install: a dirty tree refuses in adopt mode (exit $rc): $out"
+rm "$tmp/dirty/untracked.txt"
+out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/dirty" --no-pr 2>&1) || bad "install: plan fixture: $out"
+has "$out" 'plan:' && has "$out" 'write:' && has "$out" 'settings:' && has "$out" '.t-workflow/scripts' && ok || bad "install: the plan lists writes and settings before changing anything: $out"
+(cd "$tmp/dirty" && git add -A && git commit -qm installed-v1) >/dev/null 2>&1
+echo dirty > "$tmp/dirty/untracked.txt"
+out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/dirty" --no-pr 2>&1); rc=$?
+[ "$rc" -ne 0 ] && has "$out" 'not clean' && ok || bad "install: a dirty tree refuses in update mode (exit $rc): $out"
+# adopt mode refuses a colliding owned path and lists it; the aliases still merge
+mkdir -p "$tmp/collide/.github/workflows" && (cd "$tmp/collide" && git init -q -b main && mkdir -p .claude/skills/t-open && echo mine > .claude/skills/t-open/SKILL.md && git add -A && git commit -qm i)
+out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/collide" --no-pr 2>&1); rc=$?
+[ "$rc" -ne 0 ] && has "$out" 'refusing to overwrite' && has "$out" '.claude/skills/t-open' && ok || bad "install: adopt refuses a colliding path and lists it (exit $rc): $out"
+[ "$(cat "$tmp/collide/.claude/skills/t-open/SKILL.md")" = mine ] && ok || bad "install: a refused run changes nothing"
 # a git source: no tag means the newest tag; a tag means that tag
 git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v9.9.1 && git -C "$tmp/src.git" tag v9.9.10 && git -C "$tmp/src.git" tag v9.9.2 && git -C "$tmp/src.git" tag rel/v9.9.3
 mkdir -p "$tmp/f" && (cd "$tmp/f" && git init -q -b main && git commit -q --allow-empty -m i)
 out=$(bash "$ROOT/install.sh" --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, no tag: $out"
 [ "$(cat "$tmp/f/.t-workflow/VERSION")" = v9.9.10 ] && ok || bad "install: newest tag by version order, got $(cat "$tmp/f/.t-workflow/VERSION")"
+(cd "$tmp/f" && git add -A && git commit -qm installed-v9.9.10) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" v9.9.2 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, explicit tag: $out"
 [ "$(cat "$tmp/f/.t-workflow/VERSION")" = v9.9.2 ] && has "$out" 'changes from v9.9.10 to v9.9.2' && ok || bad "install: explicit tag and log between tags"
+(cd "$tmp/f" && git add -A && git commit -qm installed-v9.9.2) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" rel/v9.9.3 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: tag with a slash: $out"
 [ "$(cat "$tmp/f/.t-workflow/VERSION")" = rel/v9.9.3 ] && ok || bad "install: a tag containing / is kept whole, got $(cat "$tmp/f/.t-workflow/VERSION")"
 out=$(bash "$ROOT/install.sh" --from "$ROOT" --dir "$tmp/f" --no-pr 2>&1); has "$out" 'a tag is required' && ok || bad "install: local directory needs a tag"
@@ -209,7 +228,9 @@ grep -A2 '^      - uses: actions/checkout@v4$' $b | grep -q '^          fetch-de
 grep -q "if: \"!cancelled()\"$" $b && ! grep -q 'docs-only' $b && ok || bad "replace: the old docs-only output reference is dropped from if: lines: $(grep 'if:' $b)"
 [ "$(sed -n 's/^\(name\|on\|jobs\):.*/&/p' $b | wc -l)" = 3 ] && ok || bad "replace: build.yml has name, on, jobs"
 [ -L CLAUDE.md ] && [ -L .agents/skills ] && ok || bad "replace: aliases restored"
+(cd "$tmp/d" && git add -A && git commit -qm installed-v3) >/dev/null 2>&1
 printf '{"files":{}}' > .template-manifest.json
+(cd "$tmp/d" && git add -A && git commit -qm empty-manifest) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/d" --no-pr 2>&1); has "$out" "lists no files" && ok || bad "replace: refuses an empty manifest"
 # the old bootstrap's shape: no manifest, every slot a placeholder, the old files by name
 mkdir -p "$tmp/g/.github/workflows" "$tmp/g/.github/ISSUE_TEMPLATE" "$tmp/g/.claude/skills/t-config" "$tmp/g/.claude/skills/t-work" "$tmp/g/.claude/skills/l-mine" "$tmp/g/.t-workflow/scripts" "$tmp/g/migrations" "$tmp/g/docs/adr" "$tmp/g/docs/adapters" "$tmp/g/docs/architecture" "$tmp/g/docs/tasks/000000" "$tmp/g/docs/own"
@@ -238,6 +259,7 @@ grep -q '^    timeout-minutes: 20$' .github/workflows/build.yml && ok || bad "re
 ! grep -q 'timeout-minutes' .t-workflow/REPLACED.md && [ "$(grep -c '^## ' .t-workflow/REPLACED.md)" = 2 ] && ok || bad "replace (no manifest): timeouts and empty slots are not reported (status note and required-checks expected): $(grep '^## ' .t-workflow/REPLACED.md | tr '\n' ';')"
 [ -L CLAUDE.md ] && [ -L .github/copilot-instructions.md ] && [ -L .agents/skills ] && ok || bad "replace (no manifest): aliases kept"
 grep -q '^node_modules$' .gitignore && ! grep -q 'local -->' .gitignore && ok || bad "replace (no manifest): gitignore kept, markers stripped"
+(cd "$tmp/g" && git add -A && git commit -qm installed-v3) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" v4 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1); has "$out" 'mode: update' && ok || bad "after replace, the next run is an update: $out"
 mkdir -p "$tmp/k/.t-workflow/scripts" "$tmp/k/.github/workflows" && cd "$tmp/k" && git init -q -b main && echo c > CONSTITUTION.md && echo o > .t-workflow/scripts/protected-paths.sh && printf 'name: CI\n# <!-- local -->\n      - run: make lint\n# <!-- /local -->\n' > .github/workflows/ci.yml && echo 'name: mine' > .github/workflows/build.yml && git add -A && git commit -qm old
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/k" --no-pr >/dev/null 2>&1 || bad "replace (existing build.yml)"

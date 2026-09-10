@@ -77,8 +77,8 @@ note "mode: $mode → $tag ($why)"
 if [ "$pr" = yes ]; then
   command -v gh >/dev/null || die "gh is required (or use --no-pr)"
   gh auth status >/dev/null 2>&1 || die "gh is not authenticated (or use --no-pr)"
-  [ -z "$(git status --porcelain)" ] || die "the working tree is not clean; commit or set aside your changes first"
 fi
+[ -z "$(git status --porcelain)" ] || die "the working tree is not clean; commit or set aside your changes first"
 
 # --- source -----------------------------------------------------------------------
 src=$(mktemp -d); trap 'rm -rf "$src"' EXIT
@@ -97,6 +97,41 @@ if [ "$mode" = update ] && [ -d "$src/.git" ]; then
   git -C "$src" log --oneline "$current..$tag" 2>/dev/null | sed 's/^/  /' || note "  (history between the two tags is not available)"
 fi
 trunk=$("$src/.t-workflow/scripts/trunk.sh")
+
+# --- plan: refuse collisions, then say what will happen before anything changes --
+# Everything below this point mutates the tree or GitHub; the plan prints first.
+# In adopt mode every owned path must be absent: overwriting a repository's own
+# `.claude/skills/t-open` or `.github/workflows/t-workflow.yml` is never a merge.
+# The known aliases (CLAUDE.md, GEMINI.md, AGENTS.md, .t-workflow/config) are not in
+# OWNED and still merge as before.
+collisions=""
+if [ "$mode" = adopt ]; then
+  for p in $OWNED; do
+    [ -e "$p" ] || [ -L "$p" ] || continue
+    collisions="${collisions:+$collisions }$p"
+  done
+  [ -z "$collisions" ] || die "refusing to overwrite existing paths:$collisions — move them aside first (adopt mode writes only when absent)"
+fi
+note "plan:"
+if [ "$mode" = replace ]; then
+  note "  remove: the old t-workflow's files (manifest entries, migrations, old CI and docs)"
+else
+  note "  remove: (none)"
+fi
+note "  write:"
+for p in $OWNED; do note "    $p"; done
+note "    .t-workflow/VERSION"
+note "  create when absent: .t-workflow/config, AGENTS.md, CLAUDE.md, GEMINI.md, .agents/skills"
+[ "$mode" = replace ] && note "  create when absent: .github/workflows/build.yml (from the old CI slot's steps, when the slot held any)"
+if [ "$pr" = yes ]; then
+  if [ "$protect" = yes ] && [ "$mode" != update ]; then
+    note "  settings: open an issue, a branch and a PR; set squash-merge settings and merge the t-workflow check into branch protection"
+  else
+    note "  settings: open an issue, a branch and a PR; leave GitHub branch protection and merge settings alone"
+  fi
+else
+  note "  settings: change files only (--no-pr); GitHub settings untouched"
+fi
 
 # --- task: issue and branch --------------------------------------------------------
 case "$mode" in

@@ -51,7 +51,8 @@ installer prints, are the changelog. A release is a tag; nothing else.
 | `docs/tasks/<id>-<slug>.md` | **you** — one record per task |
 
 Owned files are copied verbatim and replaced wholesale on update. An edit to one is
-overwritten next time; put customization in the two files you own.
+overwritten next time; put customization in the two files you own. The installed
+files are MIT-licensed copies you may keep under your own license.
 
 ## The pipeline
 
