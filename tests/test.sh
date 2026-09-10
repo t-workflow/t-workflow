@@ -20,7 +20,7 @@ expect_out() { # <expected substring> <description> <command...>
   if printf '%s' "$out" | grep -qF -- "$want"; then ok; else bad "$what: output lacks '$want'"; printf '%s\n' "$out" | sed 's/^/    /'; fi
 }
 has() { printf '%s' "$1" | grep -q -- "$2"; }   # has <text> <regex>
-sedi() { local f="${@: -1}"; sed -i.bak "$@" && rm -f "$f.bak"; }   # in-place sed, portable, no backup left
+sedi() { local n=$# f; f=${!n}; sed -i.bak "$@" && rm -f "$f.bak"; }   # in-place sed, portable, no backup left
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
 # A consumer-shaped repo to run the scripts in (config from the installer, not this repo's).
@@ -31,7 +31,7 @@ mk_repo() { # <dir> [check]
 
 echo "# protected.sh / docs-only.sh"
 mk_repo "$tmp/a" || bad "install into a fresh repo"
-cd "$tmp/a"
+cd "$tmp/a" || exit
 expect_exit 0 "protected: a skill path" "$S/protected.sh" .claude/skills/t-open/SKILL.md
 expect_exit 0 "protected: the workflow file" "$S/protected.sh" .github/workflows/t-workflow.yml
 expect_exit 1 "protected: app code is not" "$S/protected.sh" src/app.rb
@@ -56,7 +56,7 @@ git -C "$tmp/a" remote add origin "$tmp/t" && git -C "$tmp/a" fetch -q origin &&
 expect_out "master" "trunk: origin HEAD wins" bash -c "cd $tmp/a && $S/trunk.sh"
 
 echo "# record.sh check"
-cd "$tmp/a"; mkdir -p docs/tasks
+cd "$tmp/a" || exit; mkdir -p docs/tasks
 cat > docs/tasks/7-fixture.md <<'R'
 # 7 — Fixture
 Issue: #7
@@ -85,12 +85,20 @@ sedi 's/^## Asked$/## Ask/' docs/tasks/7-fixture.md
 expect_out "missing '## Asked'" "record: missing section" "$S/record.sh" check 7
 printf '# 9 — Wrong id\nIssue: #9\n' > docs/tasks/7-other.md
 expect_out "first line" "record: id mismatch" "$S/record.sh" check 7 docs/tasks/7-other.md
+printf '# 7 — Fixture\nIssue: #7\n\n## Asked\nDo it.\n\n## Asked\nTwice.\n\n## Done when\nDone.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-dup.md
+expect_out "duplicated '## Asked'" "record: duplicated section" "$S/record.sh" check 7 docs/tasks/7-dup.md
+printf '# 7 — Fixture\nIssue: #7\n\n## Done when\nDone.\n\n## Asked\nDo it.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-order.md
+expect_out "out of order" "record: out-of-order section" "$S/record.sh" check 7 docs/tasks/7-order.md
+printf '# 7 — Fixture\nIssue: #7\n\n## Asked\n<from the issue>\n\n## Done when\nDone.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-place.md
+expect_out "template placeholder" "record: placeholder-only section" "$S/record.sh" check 7 docs/tasks/7-place.md
+printf '# 7 — Fixture\nIssue: #7\n\n## Asked\n\n## Done when\nDone.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-empty.md
+expect_out "'## Asked' section is empty" "record: empty section" "$S/record.sh" check 7 docs/tasks/7-empty.md
 
 echo "# lib.sh helpers"
 # shellcheck disable=SC1091
 . "$S/lib.sh"
 [ "$(slugify 'Add /t-config: a Skill!! ')" = "add-t-config-a-skill" ] && ok || bad "slugify"
-[ "$(slugify "$(printf 'x%.0s' $(seq 60))")" = "$(printf 'x%.0s' $(seq 40))" ] && ok || bad "slugify truncates to 40"
+[ "$(slugify "$(printf '%60s' '' | tr ' ' x)")" = "$(printf '%40s' '' | tr ' ' x)" ] && ok || bad "slugify truncates to 40"
 printf '## A\none\n## Plan\nallowed\n\n## B\nb\n' | section Plan | grep -q '^allowed$' && ok || bad "section extracts a body"
 [ "$(printf '## Plan\n## Plan\n' | count_sections Plan)" = 2 ] && ok || bad "count_sections"
 reviews='[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\n## Pending human checks\n- none\nreadiness: ready"},{"submittedAt":"2026-01-02T00:00:00Z","body":"isolation: fresh session\nreadiness: not-ready"}]'
@@ -144,12 +152,12 @@ printf '# 7 — X\r\nIssue: #7\r\n\r\n## Asked\r\nA.\r\n\r\n## Done when\r\nB.\r
 
 echo "# install.sh"
 mk_repo "$tmp/b" && ok || bad "install: adopt"
-cd "$tmp/b"
+cd "$tmp/b" || exit
 [ "$(cat .t-workflow/VERSION)" = v0.0.0-test ] && ok || bad "install: VERSION"
 [ -L CLAUDE.md ] && [ -L GEMINI.md ] && [ -L .agents/skills ] && ok || bad "install: symlinks"
 grep -q '^check=""' .t-workflow/config && ok || bad "install: pristine config, not this repo's"
 head -1 AGENTS.md | grep -q '.t-workflow/AGENTS.md' && ok || bad "install: AGENTS.md pointer"
-for p in .t-workflow/scripts/gate.sh .claude/skills/t-work/SKILL.md .github/workflows/t-workflow.yml docs/tasks/TEMPLATE.md; do [ -e "$p" ] || bad "install: missing $p"; done; ok
+for p in .t-workflow/scripts/gate.sh .claude/skills/t-work/SKILL.md .github/workflows/t-workflow.yml .github/ISSUE_TEMPLATE/task.yml docs/tasks/TEMPLATE.md; do [ -e "$p" ] || bad "install: missing $p"; done; ok
 [ ! -e tests ] && [ ! -e install.sh ] && [ ! -e CHANGELOG.md ] && ok || bad "install: repo-only files leaked"
 [ ! -e .github/workflows/build.yml ] && ok || bad "install: adopt writes no build workflow"
 # a real CLAUDE.md becomes AGENTS.md with the pointer prepended
@@ -161,7 +169,7 @@ grep -q '^check="npm test"' "$tmp/c/.t-workflow/config" && ok || bad "install: c
 out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1); has "$out" "already at v1" && ok || bad "install: same tag is a no-op"
 # update keeps consumer-owned files, replaces owned ones
 (cd "$tmp/c" && echo 'hand edit' >> .claude/skills/t-open/SKILL.md && sedi 's/^check=.*/check="mine"/' .t-workflow/config && echo "mine" >> AGENTS.md && git add -A && git commit -qm c)
-(cd "$tmp/c" && grep -v '^exempt=' .t-workflow/config | perl -pe 'chomp if eof' > cfg && mv cfg .t-workflow/config && git add -A && git commit -qm "drop a key")
+(cd "$tmp/c" && grep -v '^exempt=' .t-workflow/config > cfg && printf '%s' "$(< cfg)" > .t-workflow/config && git add -A && git commit -qm "drop a key")
 out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update: $out"
 (cd "$tmp/c" && [ "$(cat .t-workflow/VERSION)" = v2 ] && grep -q '^check="mine"' .t-workflow/config && grep -q '^mine$' AGENTS.md && ! grep -q 'hand edit' .claude/skills/t-open/SKILL.md) && ok || bad "install: update replaced owned files and kept consumer ones"
 (cd "$tmp/c" && grep -q '^exempt=""' .t-workflow/config && grep -B1 '^exempt=""' .t-workflow/config | head -1 | grep -q '^# Branch globs') && has "$out" 'config: added exempt' && ok || bad "install: update appends a missing config key with its comment"
@@ -191,6 +199,10 @@ git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v9.9.1 &
 mkdir -p "$tmp/f" && (cd "$tmp/f" && git init -q -b main && git commit -q --allow-empty -m i)
 out=$(bash "$ROOT/install.sh" --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, no tag: $out"
 [ "$(cat "$tmp/f/.t-workflow/VERSION")" = v9.9.10 ] && ok || bad "install: newest tag by version order, got $(cat "$tmp/f/.t-workflow/VERSION")"
+git -C "$tmp/src.git" tag zz-unrelated
+mkdir -p "$tmp/f2" && (cd "$tmp/f2" && git init -q -b main && git commit -q --allow-empty -m i)
+out=$(bash "$ROOT/install.sh" --from "file://$tmp/src.git" --dir "$tmp/f2" --no-pr 2>&1) || bad "install: git source with an unrelated tag: $out"
+[ "$(cat "$tmp/f2/.t-workflow/VERSION")" = v9.9.10 ] && ok || bad "install: an unrelated tag never wins, got $(cat "$tmp/f2/.t-workflow/VERSION")"
 (cd "$tmp/f" && git add -A && git commit -qm installed-v9.9.10) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" v9.9.2 --from "file://$tmp/src.git" --dir "$tmp/f" --no-pr 2>&1) || bad "install: git source, explicit tag: $out"
 [ "$(cat "$tmp/f/.t-workflow/VERSION")" = v9.9.2 ] && has "$out" 'changes from v9.9.10 to v9.9.2' && ok || bad "install: explicit tag and log between tags"
@@ -248,7 +260,8 @@ ln -s AGENTS.md CLAUDE.md; ln -s AGENTS.md GEMINI.md; mkdir -p .agents && ln -s 
 git add -A && git commit -qm old
 out=$(bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1) || bad "replace (no manifest): $out"
 has "$out" 'mode: replace' && has "$out" "the old t-workflow's shape" && ok || bad "replace (no manifest): detected by shape, and says so: $out"
-for p in CONSTITUTION.md docs/workflow.md docs/tasks/README.md migrations docs/adr/001-old.md docs/adapters docs/architecture/manifest.md .github/workflows/ci.yml .github/workflows/review-gate.yml .github/ISSUE_TEMPLATE/task.yml .github/ISSUE_TEMPLATE/config.yml .claude/skills/t-config .t-workflow/scripts/protected-paths.sh .t-workflow/required-checks.local; do [ -e "$p" ] && bad "replace (no manifest): old file survived: $p"; done; ok
+for p in CONSTITUTION.md docs/workflow.md docs/tasks/README.md migrations docs/adr/001-old.md docs/adapters docs/architecture/manifest.md .github/workflows/ci.yml .github/workflows/review-gate.yml .github/ISSUE_TEMPLATE/initiative.yml .github/ISSUE_TEMPLATE/config.yml .claude/skills/t-config .t-workflow/scripts/protected-paths.sh .t-workflow/required-checks.local; do [ -e "$p" ] && bad "replace (no manifest): old file survived: $p"; done; ok
+grep -q '^name: Task' .github/ISSUE_TEMPLATE/task.yml && ! grep -q '^old$' .github/ISSUE_TEMPLATE/task.yml && ok || bad "replace (no manifest): the old task form is replaced by the owned one"
 for p in .claude/skills/l-mine/SKILL.md .github/workflows/deploy.yml .github/ISSUE_TEMPLATE/bug.yml docs/adr/100-mine.md docs/architecture/mine.md docs/own/notes.md docs/tasks/000000/12-x.md; do [ -e "$p" ] || bad "replace (no manifest): consumer file lost: $p"; done; ok
 [ -f .claude/skills/t-work/SKILL.md ] && grep -q '^name: t-work' .claude/skills/t-work/SKILL.md && ok || bad "replace (no manifest): old t-work replaced by the new one"
 grep -q '^check=""' .t-workflow/config && grep -q '^reviewer_model=""' .t-workflow/config && ok || bad "replace (no manifest): placeholder slots leave config at defaults: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
@@ -305,7 +318,7 @@ case "$1 $2" in
 esac
 STUB
 chmod +x "$tmp/gh2/gh"; export RERUNS="$tmp/reruns"; : > "$RERUNS"
-cd "$tmp/b"; export PRVIEW='{"headRefOid":"abc123","isDraft":false}'
+cd "$tmp/b" || exit; export PRVIEW='{"headRefOid":"abc123","isDraft":false}'
 rr() { PATH="$tmp/gh2:$PATH" "$S/rerun-ci.sh" 7 2>&1; }
 out=$(PRVIEW='{"headRefOid":"abc123","isDraft":true}' rr); has "$out" 'is a draft' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: draft PR needs no re-run: $out"
 out=$(RUNS='[]' rr); has "$out" 'no t-workflow run at abc123' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: no run: $out"
@@ -363,7 +376,7 @@ case "$1 $2" in
 esac
 STUB
 chmod +x "$tmp/gh4/gh"; export CALLS="$tmp/calls"
-cd "$tmp/b"
+cd "$tmp/b" || exit
 pt() { PATH="$tmp/gh4:$PATH" "$S/protect.sh" "$@" 2>&1; }
 writes() { grep 'protection' "$CALLS" || true; }   # writes to the protection endpoints only (merge settings excluded)
 : > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":false,"contexts":["checks","cold-review","sonar"]},"enforce_admins":{"enabled":true},"required_pull_request_reviews":{"required_approving_review_count":1}}' pt --remove checks --remove cold-review --add build)

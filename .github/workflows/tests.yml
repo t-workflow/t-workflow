@@ -5,9 +5,19 @@ on:
   push:
     branches: [main]
 jobs:
-  tests:
+  shellcheck:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: curl -fsSL -o /tmp/sc.tar.xz https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz && tar -xJf /tmp/sc.tar.xz -C /tmp
+      - run: /tmp/shellcheck-v0.10.0/shellcheck --severity=warning install.sh tests/test.sh .t-workflow/scripts/*.sh
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: tests/test.sh
