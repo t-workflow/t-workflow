@@ -32,4 +32,4 @@ Small things an outside review found that are each cheap on their own. Listed he
 - Three targeted ShellCheck disables (SC2034/SC2154) for config values arriving through dynamic sourcing, which single-file analysis cannot see — the file convention already uses targeted disables.
 
 ## Deviations / notes
-- none
+- Re-planned after the cold review's high finding: Allowed paths grew by `.t-workflow/scripts/lib.sh`, `.t-workflow/scripts/docs-only.sh`, `.t-workflow/scripts/protected.sh` (comment plus targeted ShellCheck disable each, no behaviour change). No code changed in the fix pass; the medium/low findings stay as follow-up recommendations for the human, per fix-mode scope.
