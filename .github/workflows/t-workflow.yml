@@ -1,5 +1,7 @@
-# t-workflow's mechanical enforcement: .t-workflow/scripts/ci.sh on every pull request.
-# Drafts skip it (the work/review window costs nothing); marking a PR ready starts it.
+# t-workflow's mechanical enforcement: the base branch's copy of
+# .t-workflow/scripts/ci.sh on every pull request, so a PR is never judged by its
+# own gate scripts. Drafts skip it (the work/review window costs nothing); marking
+# a PR ready starts it.
 # One run per commit: a protected diff's run is red until its cold review exists, and
 # /t-review re-runs that same run after posting (rerun-ci.sh) rather than triggering a
 # second one, which branch protection would count alongside the red one.
@@ -30,4 +32,13 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: .t-workflow/scripts/ci.sh
+        run: |
+          git fetch -q origin "$BASE_REF"
+          if git cat-file -e "origin/$BASE_REF:.t-workflow/scripts/ci.sh" 2>/dev/null; then
+            base_scripts="$(mktemp -d)"
+            git archive "origin/$BASE_REF" .t-workflow/scripts | tar -x -C "$base_scripts"
+            "$base_scripts/.t-workflow/scripts/ci.sh"
+          else
+            # Adoption PR: the base has no t-workflow yet, so the PR's own copy runs.
+            .t-workflow/scripts/ci.sh
+          fi

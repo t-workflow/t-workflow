@@ -16,6 +16,26 @@ git fetch -q origin "$BASE_REF" 2>/dev/null || true
 changed=$(git -c core.quotePath=false diff --name-only "origin/$BASE_REF"...HEAD)
 [ -n "$changed" ] || fail "this PR changes no files"
 
+# Policy (exempt, protected, docs) is read from the base branch, so a PR cannot
+# judge itself by its own values. check stays the PR's own: a PR that changes the
+# build is tested with its own command, and that change is visible in the diff.
+# The merged copy is exported for the gate's children (protected.sh re-reads the
+# config through lib.sh), so they judge by the same values.
+check_pr="$check"
+if git cat-file -e "origin/$BASE_REF:.t-workflow/AGENTS.md" 2>/dev/null; then
+  base_cfg=$(mktemp); merged_cfg=$(mktemp); trap 'rm -f "$base_cfg" "$merged_cfg"' EXIT
+  if git show "origin/$BASE_REF:.t-workflow/config" > "$base_cfg" 2>/dev/null; then
+    load_config "$base_cfg"
+    check="$check_pr"
+    printf 'check="%s"\nprotected="%s"\ndocs="%s"\nexempt="%s"\nreviewer_model="%s"\n' \
+      "$check" "$protected" "$docs" "$exempt" "$reviewer_model" > "$merged_cfg"
+    export TW_CONFIG_FILE="$merged_cfg"
+    echo "policy: exempt/protected/docs from origin/$BASE_REF; check from the PR"
+  else
+    echo "note: origin/$BASE_REF has no .t-workflow/config; judging by the PR's values"
+  fi
+fi
+
 exempt_branch=no
 # shellcheck disable=SC2086
 match_any "$HEAD_REF" $exempt 2>/dev/null && exempt_branch=yes

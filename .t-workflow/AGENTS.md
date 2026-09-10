@@ -56,9 +56,10 @@ globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executa
    No command configured → say so.
 2. `git diff <trunk>...HEAD`, read against the task's scope.
 
-CI runs `.t-workflow/scripts/ci.sh` on every PR: the record, title, plan, review, and
+CI runs the base branch's copy of `.t-workflow/scripts/ci.sh` against every PR: the record, title, plan, review, and
 blocker rules only. The project's build runs in the project's own CI; the ship gate
 watches every check on the PR.
+The mechanical gate catches mistakes, not a pull request that rewrites the gate itself; the cold review and the human-confirmed merge cover the rest.
 
 ## Communication
 
