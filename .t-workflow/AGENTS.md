@@ -64,3 +64,11 @@ watches every check on the PR.
 
 Lead with what a change means in ordinary language before any internal term. Reports
 say what actually happened; a failed check is reported as failed, never softened.
+
+A stop that needs the human's decision is asked as a question with fixed options: the
+evidence goes in the message first, then the question, through the structured question
+the agent CLI offers when it has one, and as the last sentence of the message
+otherwise. Nothing continues on silence. A stop that asks nothing — a `BLOCKED:` line,
+red CI, a dirty tree, a rebase conflict, or a skill's own handoff to the next command —
+is unchanged by this: it ends the turn with a report, and notifying on it is the
+harness's job, not the workflow's.

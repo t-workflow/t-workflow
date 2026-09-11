@@ -5,8 +5,10 @@ description: Implement a task — gate, branch, record, work within scope, check
 
 # Implement a task
 
-`/t-work <id>`; with no id, list open tasks (`gh issue list --state open`) and ask.
-Discussing a task is not asking for it to be worked — confirm before editing.
+`/t-work <id>`; with no id, list open tasks (`gh issue list --state open`) and ask
+which to work as a question whose options are those tasks.
+Discussing a task is not asking for it to be worked — ask "Work #<id> now?" with
+options `work` / `not now` before editing.
 
 ## 1. Gate
 

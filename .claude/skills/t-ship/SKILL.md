@@ -23,8 +23,10 @@ Read `.t-workflow/AGENTS.md`.
    ran"), CI state, diff size, every pending human check, and every medium and low
    finding still open from the gate's `review-open-findings` lines, each in one plain
    sentence — confirming acknowledges them all; a human who wants one fixed first
-   answers no and names it for `/t-work <id>`. Then: "Merge PR #<pr> into <trunk>?" Do not merge on
-   silence. On no: `gh pr ready <pr> --undo` and stop.
+   answers no and names it for `/t-work <id>`. Then ask, as the question this stop's
+   rule in `.t-workflow/AGENTS.md` calls for: "Merge PR #<pr> into <trunk>?" with
+   options `merge` / `no`. Do not merge on silence. On no: `gh pr ready <pr> --undo`
+   and stop.
 5. On yes:
 
 ```bash
@@ -47,5 +49,5 @@ Task: #<id> — docs/tasks/<id>-<slug>.md
 6. `git fetch --prune`. On the trunk locally, `git merge --ff-only origin/<trunk>`; on
    any other branch, leave the checkout alone. Never delete a worktree or local branch.
 7. Report the merge commit, whether a cold review ran, and whether the local trunk was
-   fast-forwarded. If the issue has a parent whose children are now all closed, ask
-   whether to close the parent — never automatically.
+   fast-forwarded. If the issue has a parent whose children are now all closed, ask as
+   a question with options `close` / `leave open` — never automatically.
