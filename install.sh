@@ -30,6 +30,7 @@ OWNED="
 .claude/skills/t-drive
 .claude/skills/t-update
 .github/workflows/t-workflow.yml
+.github/ISSUE_TEMPLATE/task.yml
 docs/tasks/TEMPLATE.md
 "
 
@@ -53,7 +54,13 @@ source="${from:-$SOURCE_URL}"
 if [ -z "$tag" ]; then
   [ -d "$source" ] && die "a tag is required with a local directory source"
   refs=$(git ls-remote --tags --refs "$source") || die "could not list tags at $source (see the error above)"
-  tag=$(printf '%s\n' "$refs" | sed 's#^[0-9a-f]*[[:space:]]*refs/tags/##' | sort -V | tail -1)
+  # Only release-shaped tags compete; an unrelated tag never wins. Explicitly naming
+  # any tag still installs it. The ordering is a zero-padded numeric key because
+  # BSD sort (macOS) has no sort -V.
+  tags=$(printf '%s\n' "$refs" | sed 's#^[0-9a-f]*[[:space:]]*refs/tags/##' | grep '^v[0-9]' || true)
+  tag=$(printf '%s\n' "$tags" \
+    | awk '{ t=$0; k=t; gsub(/[^0-9]+/, " ", k); n=split(k, p, " "); key=""; for (i=1; i<=n; i++) key=key sprintf("%09d", p[i]); print key "\t" t }' \
+    | sort | tail -1 | cut -f2-)
   [ -n "$tag" ] || die "no tags at $source; pass one explicitly"
 fi
 

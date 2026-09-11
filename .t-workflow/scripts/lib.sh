@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers, sourced by the other scripts. Never run directly. bash 3.2 compatible.
+# Config defaults below are read by the sourcing scripts; invisible single-file.
+# shellcheck disable=SC2034
 
 # Patterns from config and the built-in sets are matched by glob_match, never expanded
 # by the shell against the working directory.

@@ -10,7 +10,8 @@ agent session. Scripts under `.t-workflow/scripts/` make the judgments; skills c
    own `/t-work` session, however small the ask. The one exception is a repository's
    genesis commit.
 2. **Every task carries a record**, `docs/tasks/<id>-<slug>.md`, in its PR.
-3. **The trunk moves only by a pull request a human confirmed.** Never commit or push
+3. **The trunk moves only by a pull request a human confirmed.** That confirmation is a
+   rule the skills follow, not an approval GitHub enforces. Never commit or push
    to it directly.
 4. **A protected diff needs a `## Plan` on its issue before implementation and a cold
    review before shipping.** Protection comes from the paths a diff touches, never from
