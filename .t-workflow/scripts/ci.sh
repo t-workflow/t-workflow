@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Everything t-workflow's CI checks on a pull request, in one job
 # (.github/workflows/t-workflow.yml): the workflow gates only — record, title, plan,
-# review, blockers. The project's build is not run here; it belongs to the project's own
-# CI, and the ship gate watches every check on the PR. Environment: BASE_REF, HEAD_REF,
-# PR_NUMBER, PR_TITLE, GH_TOKEN, PR_REF (optional). Every check runs even after one
-# fails; exit 1 when any failed.
+# review, blockers. A child of an initiative (base: its integration branch) is judged
+# like any task; an initiative's own PR (head: wip/<id>-integration) by its children's
+# records and the combined diff's review. The project's build is not run here; it
+# belongs to the project's own CI, and the ship gate watches every check on the PR.
+# Environment: BASE_REF, HEAD_REF, PR_NUMBER, PR_TITLE, GH_TOKEN, PR_REF (optional).
+# Every check runs even after one fails; exit 1 when any failed.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 cd "$TW_ROOT" || die "not in a repository"
@@ -61,20 +63,41 @@ elif [ "$exempt_branch" = yes ]; then
   ok "branch $HEAD_REF is exempt from the task gates (config: exempt)"
 else
   id=$(printf '%s' "$HEAD_REF" | sed -n -E 's#^wip/([0-9]+)-.+#\1#p')
-  if [ -z "$id" ]; then
-    fail "branch '$HEAD_REF' is not wip/<id>-<slug>; every PR is a task (or add the branch pattern to config: exempt)"
-  else
-    # Record — read through PR_REF (never assumed to be on disk; see PR_REF above)
-    rec=$(printf '%s\n' "$changed" | grep -E "^docs/tasks/$id-[^/]+\.md$" | head -1)
-    if [ -z "$rec" ]; then
-      fail "no record docs/tasks/$id-<slug>.md in this PR"
-    elif [ "$PR_REF" = HEAD ]; then
-      out=$("$TW_SCRIPTS/record.sh" check "$id" "$rec") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
+  parent_pr=no; printf '%s' "$HEAD_REF" | grep -qE '^wip/[0-9]+-integration$' && parent_pr=yes
+  # check_record <id> <path>: the record read through PR_REF (never assumed on disk).
+  check_record() {
+    local rid="$1" rec="$2" out rec_check
+    if [ "$PR_REF" = HEAD ]; then
+      out=$("$TW_SCRIPTS/record.sh" check "$rid" "$rec") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
     else
       rec_check="$(mktemp -d)/$rec"; mkdir -p "$(dirname "$rec_check")"
       if git show "$PR_REF:$rec" > "$rec_check" 2>/dev/null; then
-        out=$("$TW_SCRIPTS/record.sh" check "$id" "$rec_check") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
+        out=$("$TW_SCRIPTS/record.sh" check "$rid" "$rec_check") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
       else fail "could not read $rec from the PR ($PR_REF)"; fi
+    fi
+  }
+  if [ -z "$id" ]; then
+    fail "branch '$HEAD_REF' is not wip/<id>-<slug>; every PR is a task (or add the branch pattern to config: exempt)"
+  else
+    if [ "$parent_pr" = yes ]; then
+      # An initiative's PR, integration branch to the trunk: its records are the
+      # children's — every completed child's present and valid, no cancelled child's
+      # (its revert has landed), no child still open. No plan of its own.
+      if kids=$(children_json "$id" 2>/dev/null); then
+        [ "$(printf '%s' "$kids" | jq length)" -gt 0 ] || fail "#$id has no children"
+        while IFS=$'\t' read -r cnum cstate creason ctitle; do
+          [ -n "$cnum" ] || continue
+          rec=$(printf '%s\n' "$changed" | grep -E "^docs/tasks/$cnum-[^/]+\.md$" | head -1)
+          if [ "$cstate" = OPEN ]; then fail "child #$cnum ($ctitle) is still open"
+          elif [ "$creason" = COMPLETED ]; then
+            if [ -z "$rec" ]; then fail "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in this PR"; else check_record "$cnum" "$rec"; fi
+          elif [ -n "$rec" ]; then fail "cancelled child #$cnum is still on $HEAD_REF (its record is in the diff)"
+          else ok "cancelled child #$cnum is not in the diff"; fi
+        done < <(printf '%s' "$kids" | jq -r '.[] | [.number, .state, (.stateReason // "open"), .title] | @tsv')
+      else fail "cannot read the children of #$id"; fi
+    else
+      rec=$(printf '%s\n' "$changed" | grep -E "^docs/tasks/$id-[^/]+\.md$" | head -1)
+      if [ -z "$rec" ]; then fail "no record docs/tasks/$id-<slug>.md in this PR"; else check_record "$id" "$rec"; fi
     fi
     # Title
     printf '%s' "$PR_TITLE" | grep -qE "^\[$id\] ." && ok "title starts with [$id]" || fail "PR title must start with '[$id] '"
@@ -83,7 +106,8 @@ else
     plans=$(printf '%s\n' "$body" | count_sections Plan)
     if prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh"); then
       echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"
-      [ "$plans" -eq 1 ] && ok "protected diff has exactly one '## Plan'" || fail "protected diff needs exactly one '## Plan' on issue #$id (found $plans)"
+      if [ "$parent_pr" = yes ]; then ok "a parent's plans are its children's; each child was gated on its own"
+      else [ "$plans" -eq 1 ] && ok "protected diff has exactly one '## Plan'" || fail "protected diff needs exactly one '## Plan' on issue #$id (found $plans)"; fi
       reviews=$(gh pr view "$PR_NUMBER" --json reviews,commits 2>/dev/null) || reviews='{"reviews":[],"commits":[]}'
       rv=$(review_verdict "$(printf '%s' "$reviews" | jq -c .reviews)" "$(printf '%s' "$reviews" | jq -r '.commits[-1].committedDate // ""')")
       verdict=$(printf '%s\n' "$rv" | sed -n 's/^verdict: //p'); fresh=$(printf '%s\n' "$rv" | sed -n 's/^fresh: //p'); iso=$(printf '%s\n' "$rv" | sed -n 's/^isolation: //p')

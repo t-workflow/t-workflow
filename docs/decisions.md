@@ -3,6 +3,21 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-10 — An initiative lands through one integration branch
+
+A child's PR on its own is not always self-consistent — a rename in one child and its
+callers in the next — so shipping children to the trunk one at a time, each behind a
+human question, put half-changes on the trunk and asked the human N times for one
+decision. Now every child of an initiative merges mechanically into
+`wip/<parent>-integration` (CI green, a cold review when its diff is protected), and
+the human confirms once, on the parent's PR from that branch to the trunk, whose
+records, plans, and `Task:` lines are the children's. The gate before a child merge
+is mechanical only, and a child is judged by the integration branch's copy of the
+scripts; the trunk's guarantee that a PR cannot rewrite its own enforcement is kept
+at the trunk, where it matters. The external-collaboration machinery the old
+template had (origin sections, observer markers, verification states, feedback mode,
+preview adapters) stays gone; the issue number is still the only correlation key.
+
 ## 2026-09-09 — The build is not t-workflow's
 
 t-workflow's CI job runs the workflow gates only. A project's build needs the runner
@@ -57,13 +72,6 @@ Jira and GitLab support was dropped.
 `.t-workflow/AGENTS.md`, `.t-workflow/scripts/`, `.claude/`, `.agents/`,
 `.github/workflows/`, and the instruction files. Docs, README, `.gitignore`, and
 `.t-workflow/config` are ordinary. The consumer adds its own via config.
-
-## 2026-09-08 — No initiative integration branches, no external-collaboration model
-
-`/t-drive` on a parent walks the children one PR at a time and stops at each merge
-gate. Origin sections, observer markers, verification states, feedback mode, and
-preview adapters are gone; the issue number in every branch, record, and commit is the
-only correlation key.
 
 ## 2026-09-08 — An adoption PR is not under the rules it introduces
 

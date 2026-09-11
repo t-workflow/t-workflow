@@ -32,9 +32,9 @@ agent session. Scripts under `.t-workflow/scripts/` make the judgments; skills c
 | `/t-plan` | Pins allowed paths, risks, and checks onto the issue. Required before a protected diff. |
 | `/t-work` | Branch, record, implement, checks, draft PR. Run it again on the same task to address review findings. |
 | `/t-review` | Cold, read-only review; findings and a readiness verdict posted on the PR. Required before shipping a protected diff. |
-| `/t-ship` | Human-confirmed squash merge. The only path to the trunk. |
+| `/t-ship` | Human-confirmed squash merge. The only path to the trunk. A child of an initiative merges into the integration branch on the mechanical gate alone. |
 | `/t-cancel` | Abandon a task: reason on the issue, dependents decided, PR closed, branch deleted. |
-| `/t-drive` | Chains plan, work, review, and ship for one task, or for a parent's children in order, stopping at each merge gate. |
+| `/t-drive` | Chains plan, work, review, and ship for one task, or for a parent's children in order into the integration branch, stopping at the parent's merge gate. |
 | `/t-status` | Read-only overview of what is in flight. |
 | `/t-update` | Move `t-workflow` to a newer release, as an ordinary task. |
 
@@ -42,6 +42,12 @@ agent session. Scripts under `.t-workflow/scripts/` make the judgments; skills c
 
 Task ID = issue number. Branch `wip/<id>-<slug>`. Record `docs/tasks/<id>-<slug>.md`.
 PR title and squash subject `[<id>] <title>`. Commit messages imperative.
+
+An initiative's children branch from and merge into `wip/<parent>-integration`, created
+from the trunk by the first child's `/t-work`; nothing of an initiative reaches the
+trunk until the parent's own PR, from that branch, does. The parent's PR carries the
+children's records and one `Task:` line per child; the parent relation is the issue's
+own, never a label on the child.
 
 ## Protected paths
 
@@ -57,11 +63,15 @@ globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executa
 2. `git diff <trunk>...HEAD`, read against the task's scope.
 
 CI reads this workflow file and every gate script it runs — record, title, plan,
-review, and blocker rules only — from the base branch, never the pull request's own
+review, and blocker rules only — from the pull request's base branch, never its own
 copy: the trigger is `pull_request_target`, which GitHub reads from the base branch,
-and the scripts it calls are fetched from there too. A pull request cannot rewrite its
-own enforcement. The project's build runs in the project's own CI; the ship gate
-watches every check on the PR.
+and the scripts it calls are fetched from there too. A child of an initiative is
+therefore judged by the integration branch's copy of the scripts and policy, and the
+initiative's PR to the trunk by the trunk's copy, on the combined diff. The guarantee
+that a pull request cannot rewrite its own enforcement holds at the trunk; the gate
+before a child merge is mechanical only, and what it enforces is whatever has already
+landed on the integration branch under that gate. The project's build runs in the
+project's own CI; the ship gate watches every check on the PR.
 The mechanical gate only checks process — a record, a title, a plan, a review verdict
 — never whether a diff is honest or correct; the cold review and the human-confirmed
 merge are what cover that.

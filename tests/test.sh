@@ -367,21 +367,25 @@ out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok
 out=$(PRVIEW='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot read PR' && ok || bad "rerun-ci: unreadable PR (exit $rc): $out"
 grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
 
-echo "# issue.sh children / blocking (stubbed gh, GitHub's real shape)"
+echo "# issue.sh children / parent / blocking (stubbed gh, GitHub's real shape)"
 mkdir -p "$tmp/gh3"
 cat > "$tmp/gh3/gh" <<'STUB'
 #!/usr/bin/env bash
-# stub gh: returns GitHub's real JSON for the two fields, then applies the --jq expression the script passed
+# stub gh: returns GitHub's real JSON for the fields, then applies the --jq expression the script passed
 args=("$@"); expr=""; for i in "${!args[@]}"; do [ "${args[$i]}" = "--jq" ] && expr="${args[$((i+1))]}"; done
 case "$*" in
-  *"--json subIssues"*) json='{"subIssues":{"nodes":[{"id":"I_1","number":8,"state":"OPEN","title":"Step 1","url":"u"},{"id":"I_2","number":9,"state":"CLOSED","title":"Step 2","url":"u"}]}}' ;;
+  "repo view"*) echo "o/r"; exit 0 ;;
+  *"subIssues(first:100)"*) json='{"data":{"repository":{"issue":{"subIssues":{"nodes":[{"number":8,"state":"OPEN","stateReason":null,"title":"Step 1"},{"number":9,"state":"CLOSED","stateReason":"COMPLETED","title":"Step 2"}]}}}}}' ;;
+  *"--json parent"*)  json='{"parent":{"id":"I_0","number":7,"state":"OPEN","title":"Init","url":"u"}}'; [ "$3" = 33 ] && json='{"parent":null}' ;;
   *"--json blocking"*)  json='{"blocking":{"nodes":[{"id":"I_3","number":21,"state":"OPEN","title":"Step 14","url":"u"}]}}' ;;
   *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
 esac
-if [ -n "$expr" ]; then printf '%s' "$json" | jq -c "$expr"; else printf '%s' "$json"; fi
+if [ -n "$expr" ]; then printf '%s' "$json" | jq -rc "$expr"; else printf '%s' "$json"; fi
 STUB
 chmod +x "$tmp/gh3/gh"
-out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" children 7 2>&1); [ "$out" = '[{"number":8,"title":"Step 1","state":"OPEN"},{"number":9,"title":"Step 2","state":"CLOSED"}]' ] && ok || bad "issue.sh children: $out"
+out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" children 7 2>&1); [ "$out" = '[{"number":8,"title":"Step 1","state":"OPEN","stateReason":null},{"number":9,"title":"Step 2","state":"CLOSED","stateReason":"COMPLETED"}]' ] && ok || bad "issue.sh children carries stateReason: $out"
+out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" parent 8 2>&1); [ "$out" = 7 ] && ok || bad "issue.sh parent: $out"
+expect_exit 1 "issue.sh parent: none" env PATH="$tmp/gh3:$PATH" "$S/issue.sh" parent 33
 out=$(PATH="$tmp/gh3:$PATH" "$S/issue.sh" blocking 9 2>&1); [ "$out" = '[{"number":21,"title":"Step 14","state":"OPEN"}]' ] && ok || bad "issue.sh blocking: $out"
 
 echo "# protect.sh (stubbed gh)"
@@ -406,6 +410,19 @@ case "$1 $2" in
       echo "HTTP 404: Required status checks not enabled" >&2; exit 1
     fi
     echo "$3 $4 $body" >> "$CALLS" ;;
+  "api graphql")
+    # RULES: the existing branchProtectionRules nodes; RULES_FAIL=1 fails the read;
+    # CREATE_FAILS=upgrade refuses the create the way a free private repository does.
+    # Writes land in $CALLS as "GRAPHQL create|update <-F values>".
+    vars=""; args=("$@"); for i in "${!args[@]}"; do [ "${args[$i]}" = "-F" ] && vars="$vars ${args[$((i+1))]}"; done
+    case "$*" in
+      *branchProtectionRules*) [ "${RULES_FAIL:-}" = 1 ] && { echo "error connecting to api.github.com" >&2; exit 1; }
+        printf '{"data":{"repository":{"id":"R_1","branchProtectionRules":{"nodes":%s}}}}' "${RULES:-[]}" ;;
+      *createBranchProtectionRule*) [ "${CREATE_FAILS:-}" = upgrade ] && { echo "GraphQL: Upgrade to GitHub Pro or make this repository public to enable this feature. (createBranchProtectionRule)" >&2; exit 1; }
+        echo "GRAPHQL create$vars" >> "$CALLS"; echo '{"data":{}}' ;;
+      *updateBranchProtectionRule*) echo "GRAPHQL update$vars" >> "$CALLS"; echo '{"data":{}}' ;;
+      *) echo "stub: unexpected graphql $*" >&2; exit 9 ;;
+    esac ;;
   *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
 esac
 STUB
@@ -438,6 +455,120 @@ has "$(writes)" '{"strict":true,"contexts":\["t-workflow","build"\]}' && ok || b
 has "$(writes)" '"contexts":\["cax","t-workflow"\]' && ok || bad "protect: a removed context is matched literally, not as a pattern: $(writes)"
 : > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":false,"contexts":["a"]}}' pt); rc=$?
 [ "$rc" -eq 0 ] && has "$(writes)" '"contexts":\["a","t-workflow"\]' && ok || bad "protect: no --add/--remove at all works (empty arrays, bash 3.2 idiom) (exit $rc): $out"
+
+echo "# protect.sh: the wip/*-integration pattern rule (GraphQL)"
+gql() { grep '^GRAPHQL' "$CALLS" || true; }
+: > "$CALLS"; out=$(PROTECTION=404 pt); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'wip/\*-integration protected' && has "$(gql)" '^GRAPHQL create r=R_1 p=wip/\*-integration$' && ok || bad "protect: no rule for the pattern → created after the trunk's (exit $rc): $out / $(gql)"
+: > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":false,"contexts":["a"]}}' RULES='[{"id":"BPR_main","pattern":"main","requiredStatusCheckContexts":["a"]},{"id":"BPR_int","pattern":"wip/*-integration","requiredStatusCheckContexts":["build","checks"]}]' pt --remove checks --add sonar); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'wip/\*-integration required checks now: build t-workflow sonar' && has "$(gql)" '^GRAPHQL update id=BPR_int ctx=\["build","t-workflow","sonar"\]$' && ! has "$(gql)" 'create' && ok || bad "protect: an existing pattern rule is merged into, not replaced (exit $rc): $out / $(gql)"
+: > "$CALLS"; out=$(PROTECTION=404 CREATE_FAILS=upgrade pt); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'not available on this repository' && has "$out" 'wip/\*-integration rule holds by convention' && [ -z "$(gql)" ] && ok || bad "protect: a plan refusal on the pattern rule is reported, exit 0 (exit $rc): $out"
+: > "$CALLS"; out=$(PROTECTION=404 RULES_FAIL=1 pt); rc=$?
+[ "$rc" -eq 2 ] && has "$out" 'could not read the branch protection rules; nothing was changed' && [ -z "$(gql)" ] && ok || bad "protect: an unreadable rule list never writes the pattern rule (exit $rc): $out"
+: > "$CALLS"; out=$(PROTECTION=403 pt); [ -z "$(gql)" ] && ok || bad "protect: no plan for the trunk's rule → the pattern rule is not attempted either: $(gql)"
+
+echo "# gate.sh work / ship: a task, an initiative's child, the initiative (stubbed gh, bare origin)"
+mkdir -p "$tmp/gh5"; cat > "$tmp/gh5/gh" <<'STUB'
+#!/usr/bin/env bash
+# stub gh for the gates. Fixtures in the environment, in gh's own JSON shapes:
+#   ISSUES   {"<n>": issue view object}          BLOCKERS {"<n>": blockedBy nodes}
+#   PRS      [pr view objects, with "state"]      CHILDREN {"<n>": subIssues nodes}
+# --jq/-q expressions are applied as gh applies them.
+args=("$@"); expr=""; st=open; num=""
+for i in "${!args[@]}"; do case "${args[$i]}" in --jq|-q) expr="${args[$((i+1))]}" ;; --state) st="${args[$((i+1))]}" ;; -F) case "${args[$((i+1))]}" in num=*) num="${args[$((i+1))]#num=}" ;; esac ;; esac; done
+emit() { if [ -n "$expr" ]; then printf '%s' "$1" | jq -rc "$expr"; else printf '%s' "$1"; fi; }
+case "$1 $2" in
+  "repo view") echo "o/r" ;;
+  "issue view") j=$(printf '%s' "$ISSUES" | jq -c --arg n "$3" '.[$n] // empty'); [ -n "$j" ] || exit 1; emit "$j" ;;
+  "pr list") emit "$(printf '%s' "${PRS:-[]}" | jq -c --arg s "$st" '[.[] | select($s == "all" or (.state | ascii_downcase) == $s)]')" ;;
+  "pr view") j=$(printf '%s' "${PRS:-[]}" | jq -c --argjson n "$3" '.[] | select(.number == $n)'); [ -n "$j" ] || exit 1; emit "$j" ;;
+  "api graphql")
+    case "$*" in
+      *blockedBy*) emit "$(printf '%s' "${BLOCKERS:-{\}}" | jq -c --arg n "$num" '{data:{repository:{issue:{blockedBy:{nodes:(.[$n] // [])}}}}}')" ;;
+      *subIssues*) emit "$(printf '%s' "${CHILDREN:-{\}}" | jq -c --arg n "$num" '{data:{repository:{issue:{subIssues:{nodes:(.[$n] // [])}}}}}')" ;;
+      *) echo "stub: unexpected graphql $*" >&2; exit 9 ;;
+    esac ;;
+  *) echo "stub: unexpected gh $*" >&2; exit 9 ;;
+esac
+STUB
+chmod +x "$tmp/gh5/gh"
+mkdir -p "$tmp/i" && (cd "$tmp/i" && git init -q -b main && echo base > base.txt && git add -A && git commit -qm init && git clone -q --bare . "$tmp/i-origin" && git remote add origin "$tmp/i-origin" && git fetch -q origin)
+bash "$ROOT/install.sh" v0 --from "$ROOT" --dir "$tmp/i" --no-pr >/dev/null 2>&1 || bad "gate fixture: install"
+cd "$tmp/i" && git add -A && git commit -qm adopt && git push -q origin main && git fetch -q origin
+export ISSUES='{
+  "30": {"number":30,"title":"Init","state":"OPEN","labels":[{"name":"initiative"}],"body":"## Goal\nx\n","parent":null},
+  "31": {"number":31,"title":"A","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/a.txt`\n","parent":{"number":30}},
+  "32": {"number":32,"title":"B","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/b.txt`\n","parent":{"number":30}},
+  "33": {"number":33,"title":"C","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/c.txt`\n","parent":null},
+  "34": {"number":34,"title":"D","state":"CLOSED","labels":[],"body":"## Goal\nx\n","parent":{"number":30}}}'
+export BLOCKERS='{"32":[{"number":31,"state":"OPEN","stateReason":null,"title":"A"}]}'
+export CHILDREN='{}' PRS='[]'
+g() { PATH="$tmp/gh5:$PATH" "$S/gate.sh" "$@" 2>&1; }
+out=$(g work 33); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: task$' && has "$out" '^base: main$' && has "$out" 'create wip/33-c from origin/main' && ok || bad "gate work: a plain task's base is the trunk (exit $rc): $out"
+out=$(g work 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: #30 is a parent' && ok || bad "gate work: a parent has no branch (exit $rc): $out"
+out=$(g work 31); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: child of #30$' && has "$out" '^base: wip/30-integration (integration branch of #30, created from origin/main)$' && has "$out" 'create wip/31-a from origin/wip/30-integration' && ok || bad "gate work: a child's base is the integration branch, created on first use (exit $rc): $out"
+git ls-remote --heads "$tmp/i-origin" | grep -q 'refs/heads/wip/30-integration$' && [ "$(git rev-parse origin/wip/30-integration)" = "$(git rev-parse origin/main)" ] && ok || bad "gate work: the integration branch exists on origin at the trunk's commit"
+out=$(g work 31); has "$out" '^base: wip/30-integration (integration branch of #30)$' && ok || bad "gate work: an existing integration branch is reused, not recreated: $out"
+out=$(g work 32); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: a blocker is not closed as completed' && ok || bad "gate work: a child blocked by an open sibling (exit $rc): $out"
+export BLOCKERS='{"32":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"}]}'
+out=$(g work 32); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^base: wip/30-integration' && ok || bad "gate work: the sibling closed as completed unblocks (exit $rc): $out"
+# the child's PR: into the integration branch, merged without a question
+# pr <number> <title> <state> _ _ <head> <base> <files>: sets PRS to that one PR, in gh's shape
+pr() { PRS=$(printf '[{"number":%s,"title":"%s","url":"u/%s","state":"%s","isDraft":true,"mergeable":"MERGEABLE","headRefOid":"%s","headRefName":"%s","baseRefName":"%s","files":%s,"reviews":[],"commits":[{"committedDate":"2026-01-01T00:00:00Z"}],"statusCheckRollup":[]}]' "$1" "$2" "$1" "$3" "$(git rev-parse "$6")" "$6" "$7" "$(printf '%s' "$8" | jq -c 'map({path: .})')"); export PRS; }
+mkrec() { printf '# %s — %s\nIssue: #%s\n\n## Asked\nDo %s.\n\n## Done when\nIt is done.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' "$1" "$2" "$1" "$2" > "docs/tasks/$1-$3.md"; }
+git checkout -q -b wip/31-a origin/wip/30-integration && mkdir -p src docs/tasks && echo a > src/a.txt && mkrec 31 A a
+git add -A && git commit -qm "a" && git push -q -u origin wip/31-a
+pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration '["docs/tasks/31-a.md","src/a.txt"]'
+out=$(g ship 31); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^merge: automatic (into wip/30-integration; the human.s gate is /t-ship 30)$' && has "$out" '^record: docs/tasks/31-a.md$' && has "$out" 'wip/31-a → wip/30-integration' && ok || bad "gate ship: a child's PR into the integration branch merges automatically (exit $rc): $out"
+pr 101 '[31] A' OPEN _ _ wip/31-a main '["docs/tasks/31-a.md","src/a.txt"]'
+out=$(g ship 31); rc=$?; [ "$rc" -eq 1 ] && has "$out" "BLOCKED: PR base is main; a child's PR merges into wip/30-integration" && ok || bad "gate ship: a child's PR against the trunk is refused (exit $rc): $out"
+# the parent's PR: the integration branch to the trunk, after the children landed
+git checkout -q -B wip/30-integration origin/wip/30-integration && git merge -q --squash wip/31-a && git commit -qm "[31] A (#101)"
+echo b > src/b.txt && mkrec 32 B b && git add -A && git commit -qm "[32] B (#104)" && git push -q origin wip/30-integration
+git checkout -q main
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"OPEN","stateReason":null,"title":"B"}]}'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" '^merge: confirm$' && has "$out" 'BLOCKED: child #32 is still open' && has "$out" '^record: docs/tasks/31-a.md$' && ok || bad "gate ship: a parent blocks while a child is open (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: parent$' && has "$out" '^record: docs/tasks/32-b.md$' && ! has "$out" 'Plan' && ok || bad "gate ship: every child closed as completed with its record → the parent may ship, no plan asked (exit $rc): $out"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","src/a.txt","src/b.txt"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: completed child #32 has no record' && ok || bad "gate ship: a completed child whose record is not in the diff blocks (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":34,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"D"}]}'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","docs/tasks/34-d.md","src/a.txt","src/b.txt"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: cancelled child #34 is still on wip/30-integration' && ok || bad "gate ship: a cancelled child still on the branch blocks (exit $rc): $out"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && ok || bad "gate ship: a cancelled child whose revert landed is fine (exit $rc): $out"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md",".claude/skills/x/SKILL.md"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: protected diff with no cold review' && ! has "$out" "no '## Plan'" && ok || bad "gate ship: a protected combined diff needs the review, never a plan on the parent (exit $rc): $out"
+export PRS='[]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: no PR for #30 — open the integration PR: gh pr create --draft --base main --head wip/30-integration --title "\[30\] Init"' && ok || bad "gate ship: a parent with no PR names the command that opens it (exit $rc): $out"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '[]'; export CHILDREN='{"30":[]}'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: #30 has no children' && ok || bad "gate ship: a parent without children (exit $rc): $out"
+git checkout -q -b wip/33-c origin/main && mkdir -p docs/tasks && mkrec 33 C c
+git add -A && git commit -qm c && git push -q -u origin wip/33-c && git checkout -q main
+pr 103 '[33] C' OPEN _ _ wip/33-c main '["docs/tasks/33-c.md"]'
+out=$(g ship 33); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^merge: confirm$' && has "$out" '^record: docs/tasks/33-c.md$' && ok || bad "gate ship: a plain task still asks the human (exit $rc): $out"
+
+echo "# ci.sh: a child's PR and the initiative's PR"
+ci5() { BASE_REF="$1" HEAD_REF="$2" PR_NUMBER="$3" PR_TITLE="$4" GH_TOKEN=x PATH="$tmp/gh5:$PATH" "$S/ci.sh" 2>&1; }
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}' BLOCKERS='{}'
+out=$(PR_REF=wip/31-a ci5 wip/30-integration wip/31-a 101 "[31] A"); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'policy: exempt/protected/docs from origin/wip/30-integration' && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a child's PR is judged by today's rules from its base, the integration branch (exit $rc): $out"
+out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: record docs/tasks/32-b.md' && has "$out" 'OK: title starts with \[30\]' && ! has "$out" 'no record docs/tasks/30-' && ok || bad "ci: the initiative's PR is judged by its children's records, not its own (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"OPEN","stateReason":null,"title":"B"}]}'
+out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 1 ] && has "$out" 'FAIL: child #32 (B) is still open' && ok || bad "ci: an open child fails the initiative's PR (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"B"}]}'
+out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 1 ] && has "$out" 'FAIL: cancelled child #32 is still on wip/30-integration' && ok || bad "ci: a cancelled child still in the diff fails (exit $rc): $out"
+git checkout -q -b wip/30-prot origin/wip/30-integration && mkdir -p .claude/skills/x && echo x > .claude/skills/x/SKILL.md && git add -A && git commit -qm prot -q
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}'
+pr 102 '[30] Init' OPEN _ _ wip/30-prot main '[]'
+out=$(PR_REF=wip/30-prot ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 1 ] && has "$out" "OK: a parent's plans are its children's" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a protected combined diff needs the review, never a plan on the parent (exit $rc): $out"
+git checkout -q main; unset ISSUES BLOCKERS CHILDREN PRS
 
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
