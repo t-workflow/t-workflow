@@ -20,4 +20,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # the suite bare-clones this checkout; a shallow source makes install.sh's filtered clone crawl
       - run: tests/test.sh
