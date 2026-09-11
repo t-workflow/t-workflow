@@ -117,7 +117,7 @@ protect_integration() {
   echo "$pattern required checks before: $(printf '%s' "$before" | tr '\n' ' ')"
   new=$(printf '%s\n' "$before" | merge_contexts)
   while IFS= read -r c; do [ -n "$c" ] && ctx+=(-F "ctx[]=$c"); done <<< "$new"
-  if gh api graphql -F id="$(printf '%s' "$rule" | jq -r .id)" "${ctx[@]}" -f query='mutation($id:ID!,$ctx:[String!]!){updateBranchProtectionRule(input:{branchProtectionRuleId:$id,requiresStatusChecks:true,requiredStatusCheckContexts:$ctx}){branchProtectionRule{id}}}' >/dev/null 2>"$err"; then
+  if gh api graphql -F id="$(printf '%s' "$rule" | jq -r .id)" ${ctx[@]+"${ctx[@]}"} -f query='mutation($id:ID!,$ctx:[String!]!){updateBranchProtectionRule(input:{branchProtectionRuleId:$id,requiresStatusChecks:true,requiredStatusCheckContexts:$ctx}){branchProtectionRule{id}}}' >/dev/null 2>"$err"; then
     echo "OK: $pattern required checks now: $(printf '%s' "$new" | tr '\n' ' ')— every other setting of that rule left as it was"
   else echo "FAIL: could not update the $pattern rule:"; sed 's/^/  /' "$err"; return 1; fi
   return 0
