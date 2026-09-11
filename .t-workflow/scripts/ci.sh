@@ -20,7 +20,8 @@ ok()   { echo "OK: $*"; }
 fail() { echo "FAIL: $*"; rc=1; }
 
 git fetch -q origin "$BASE_REF" 2>/dev/null || true
-changed=$(git -c core.quotePath=false diff --name-only "origin/$BASE_REF"..."$PR_REF")
+diff_range="origin/$BASE_REF...$PR_REF"
+changed=$(git -c core.quotePath=false diff --name-only "$diff_range")
 [ -n "$changed" ] || fail "this PR changes no files"
 
 # Policy (exempt, protected, docs) is read from the base branch, so a PR cannot
@@ -39,6 +40,7 @@ if git cat-file -e "origin/$BASE_REF:.t-workflow/AGENTS.md" 2>/dev/null; then
   if git show "origin/$BASE_REF:.t-workflow/config" > "$base_cfg" 2>/dev/null; then
     load_config "$base_cfg"
     check="$check_pr"
+    # shellcheck disable=SC2154 # protected, docs, exempt, reviewer_model: set by load_config (lib.sh), sourced dynamically
     printf 'check="%s"\nprotected="%s"\ndocs="%s"\nexempt="%s"\nreviewer_model="%s"\n' \
       "$check" "$protected" "$docs" "$exempt" "$reviewer_model" > "$merged_cfg"
     export TW_CONFIG_FILE="$merged_cfg"

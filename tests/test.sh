@@ -286,6 +286,7 @@ mkdir -p "$tmp/cfg/.t-workflow"
 printf '%s\n' '# a comment' 'check="tests/test.sh"' 'protected="db/migrate/*"' \
   'check="x"; touch "$tmp/cfg-PWNED"' 'exempt="a" # trailing junk' 'bogus="y"' \
   'reviewer_model="m"; touch "$tmp/cfg-PWNED2"' > "$tmp/cfg/.t-workflow/config"
+# shellcheck disable=SC2154 # check, protected, exempt, docs, reviewer_model: set by lib.sh, sourced dynamically above
 cfgvals=$(cd "$tmp/cfg" && . "$S/lib.sh" && printf 'check=%s protected=%s exempt=%s docs=%s reviewer=%s' "$check" "$protected" "$exempt" "$docs" "$reviewer_model")
 [ "$cfgvals" = "check=tests/test.sh protected=db/migrate/* exempt= docs= reviewer=" ] && ok || bad "config: plain key=value lines parse, the rest is ignored: $cfgvals"
 [ ! -e "$tmp/cfg-PWNED" ] && [ ! -e "$tmp/cfg-PWNED2" ] && ok || bad "config: a shell payload in the config never runs"
