@@ -108,7 +108,12 @@ else
           rec=$(printf '%s\n' "$changed" | grep -E "^docs/tasks/$cnum-[^/]+\.md$" | head -1)
           if [ "$cstate" = OPEN ]; then fail "child #$cnum ($ctitle) is still open"
           elif [ "$creason" = COMPLETED ]; then
-            if [ -z "$rec" ]; then fail "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in this PR"; else check_record "$cnum" "$rec" "$cstate" "$creason"; fi
+            # A child that merged into the trunk itself, under a release that had no
+            # integration branch, has its record there already, not in this diff.
+            if [ -n "$rec" ]; then check_record "$cnum" "$rec" "$cstate" "$creason"
+            elif rec=$(git ls-tree --name-only "origin/$BASE_REF" docs/tasks/ 2>/dev/null | grep -E "^docs/tasks/$cnum-[^/]+\.md$" | head -1) && [ -n "$rec" ]; then
+              ok "record $rec of completed child #$cnum is already on $BASE_REF (merged there before the integration branch existed)"
+            else fail "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in this PR or on $BASE_REF"; fi
           elif [ -n "$rec" ] && git cat-file -e "$PR_REF:$rec" 2>/dev/null; then fail "cancelled child #$cnum is still on $HEAD_REF (its record is in the diff)"
           elif [ -n "$rec" ]; then check_record "$cnum" "$rec" "$cstate" "$creason"
           else ok "cancelled child #$cnum is not in the diff"; fi

@@ -16,8 +16,8 @@ is judged first by that cost:
   says why in its issue.
 - Prefer removing a rule to adding one. A rule that guards against a problem nobody has
   had is not added.
-- A version, date, or release name never appears in the tree. Nothing is written that
-  a tag or the git log already says.
+- A version, date, or release name never appears in a shipped file (the `OWNED` list in
+  `install.sh`). Nothing is written that a tag or the git log already says.
 - Anything a script can decide, a script decides; skills stay short procedures that
   call them.
 - Friction a consumer hits is fixed here, never worked around in the consumer.

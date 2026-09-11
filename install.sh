@@ -30,8 +30,14 @@ OWNED="
 .claude/skills/t-drive
 .claude/skills/t-update
 .github/workflows/t-workflow.yml
-.github/ISSUE_TEMPLATE/task.yml
 docs/tasks/TEMPLATE.md
+"
+# Paths an earlier release owned and this one does not, each with the git blob id of
+# every copy this repository ever shipped. An update removes the consumer's file at
+# such a path only when its bytes are one of those — the release's own copy, never a
+# file the consumer wrote under that name.
+RETIRED="
+.github/ISSUE_TEMPLATE/task.yml b774760dd3dad869983e021d21693afecd191646 7c86e3808849a3a36c1f534277a4adff8fdf10b7
 "
 
 note() { printf '%s\n' "$*"; }
@@ -119,9 +125,21 @@ if [ "$mode" = adopt ]; then
   done
   [ -z "$collisions" ] || die "refusing to overwrite existing paths:$collisions — move them aside first (adopt mode writes only when absent)"
 fi
+retire=""
+if [ "$mode" = update ]; then
+  while read -r p ids; do
+    [ -n "$p" ] && [ -f "$p" ] || continue
+    case " $ids " in
+      *" $(git hash-object "$p") "*) retire="${retire:+$retire }$p" ;;
+      *) note "note: $p is no longer shipped; the copy here is not a release's, so it stays yours" ;;
+    esac
+  done <<< "$RETIRED"
+fi
 note "plan:"
 if [ "$mode" = replace ]; then
   note "  remove: the old t-workflow's files (manifest entries, migrations, old CI and docs)"
+elif [ -n "$retire" ]; then
+  for p in $retire; do note "  remove: $p (retired; the copy here is the one an earlier release wrote)"; done
 else
   note "  remove: (none)"
 fi
@@ -131,8 +149,8 @@ note "    .t-workflow/VERSION"
 note "  create when absent: .t-workflow/config, AGENTS.md, CLAUDE.md, GEMINI.md, .agents/skills"
 [ "$mode" = replace ] && note "  create when absent: .github/workflows/build.yml (from the old CI slot's steps, when the slot held any)"
 if [ "$pr" = yes ]; then
-  if [ "$protect" = yes ] && [ "$mode" != update ]; then
-    note "  settings: open an issue, a branch and a PR; set squash-merge settings and merge the t-workflow check into branch protection"
+  if [ "$protect" = yes ]; then
+    note "  settings: open an issue, a branch and a PR; set squash-merge settings and merge the t-workflow check into branch protection (existing rules kept)"
   else
     note "  settings: open an issue, a branch and a PR; leave GitHub branch protection and merge settings alone"
   fi
@@ -350,6 +368,7 @@ fi
 for p in $OWNED; do
   rm -rf "$p"; mkdir -p "$(dirname "$p")"; cp -R "$src/$p" "$p"
 done
+for p in $retire; do rm -f "$p"; rmdir "$(dirname "$p")" 2>/dev/null || true; note "removed $p (retired)"; done
 printf '%s\n' "$tag" > .t-workflow/VERSION
 chmod +x .t-workflow/scripts/*.sh
 mkdir -p .agents docs/tasks
@@ -375,7 +394,8 @@ detect_check() {
 default_config() {
   cat <<'CONFIG'
 # t-workflow configuration. Owned by this repository; never touched by an update.
-# Shell syntax: key="value". Read by .t-workflow/scripts/*.
+# Parsed by .t-workflow/scripts/*, never executed: key="value" lines only, no quotes
+# inside the value, no variables. Any other assignment is ignored and said on stderr.
 
 # Build/test command the agent runs locally before opening a PR (empty = none yet).
 # CI does not run it; the project's own CI does.
@@ -416,6 +436,9 @@ else
       print "# CI does not run it; the project'"'"'s own CI does."; next }
     $0 == "# Branch globs exempt from the task gates in CI (e.g. \"dependabot/*\"). Check 1 still runs." {
       print "# Branch globs exempt from the task gates in CI (e.g. \"dependabot/*\")."; next }
+    $0 == "# Shell syntax: key=\"value\". Read by .t-workflow/scripts/*." {
+      print "# Parsed by .t-workflow/scripts/*, never executed: key=\"value\" lines only, no quotes"
+      print "# inside the value, no variables. Any other assignment is ignored and said on stderr."; next }
     { print }' .t-workflow/config > .t-workflow/config.new && mv .t-workflow/config.new .t-workflow/config
   rm -f .t-workflow/config.bak
   [ -z "$(tail -c1 .t-workflow/config)" ] || echo >> .t-workflow/config   # end with a newline before appending
@@ -471,7 +494,7 @@ else
   prurl=$(gh pr create --title "[$id] $title" --body-file "$prbody")
 fi
 rm -f "$prbody"
-if [ "$protect" = yes ] && [ "$mode" != update ]; then
+if [ "$protect" = yes ]; then
   pflags=(); [ "$mode" = replace ] && pflags+=(--remove checks --remove cold-review); [ "${wrote_build:-}" = yes ] && pflags+=(--add build)
   .t-workflow/scripts/protect.sh ${pflags[@]+"${pflags[@]}"} || true
 fi

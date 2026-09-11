@@ -14,7 +14,8 @@
 #                       A child of an initiative merges into the integration branch
 #                       (`merge: automatic`); a parent's PR is the integration branch
 #                       to the trunk (`merge: confirm`): every child closed, every
-#                       completed child's record in the diff, no cancelled child's.
+#                       completed child's record in the diff (or already on the trunk,
+#                       from before the integration branch existed), no cancelled child's.
 #   exit 0 = proceed; 1 = at least one BLOCKED line; 2 = could not evaluate.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -63,11 +64,15 @@ work)
   else echo "protected: scope not declared in backticks; judged from the diff later"; fi
 
   # The base: the trunk, or for a child of an initiative its integration branch,
-  # created on origin from the trunk the first time a child is worked.
+  # created on origin from the trunk the first time a child is worked. The child
+  # relation is the issue's own parent field; ci.sh and the ship gate know the parent
+  # by its `initiative` label, so the label has to be there before the branch is.
   base="$trunk"
   if [ "$kind" = child ]; then
     base=$(integration_branch "$parent")
-    if ! git show-ref -q --verify "refs/remotes/origin/$base"; then
+    if ! gh issue view "$parent" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -qE '(^|,)initiative(,|$)'; then
+      block "parent #$parent has no 'initiative' label, so its integration branch would never be judged as a parent's — run: .t-workflow/scripts/issue.sh ensure-label initiative && gh issue edit $parent --add-label initiative"
+    elif ! git show-ref -q --verify "refs/remotes/origin/$base"; then
       if perr=$(git push -q origin "origin/$trunk:refs/heads/$base" 2>&1) && git fetch -q origin 2>/dev/null; then
         echo "base: $base (integration branch of #$parent, created from origin/$trunk)"
       else block "could not create $base from origin/$trunk on origin: $(printf '%s' "$perr" | grep -v '^$' | tail -2 | tr '\n' ' ')"; fi
@@ -162,7 +167,12 @@ ship)
       echo "  #$cnum $ctitle ($cstate/$creason)"
       if [ "$cstate" = OPEN ]; then block "child #$cnum is still open — finish it (/t-drive $cnum) or cancel it (/t-cancel $cnum)"
       elif [ "$creason" = COMPLETED ]; then
-        if [ -z "$rec" ]; then block "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in the PR — it never merged into $branch"; else check_record "$cnum" "$rec"; fi
+        # A child that merged into the trunk itself, under a release that had no
+        # integration branch, has its record there already, not in this diff.
+        if [ -n "$rec" ]; then check_record "$cnum" "$rec"
+        elif rec=$(git ls-tree --name-only "origin/$trunk" docs/tasks/ 2>/dev/null | grep -E "^docs/tasks/$cnum-[^/]+\.md$" | head -1) && [ -n "$rec" ]; then
+          echo "record: $rec (already on $trunk — merged there before the integration branch existed)"
+        else block "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in the PR or on $trunk — it never merged into $branch"; fi
       elif [ -n "$rec" ]; then block "cancelled child #$cnum is still on $branch — /t-cancel $cnum reverts it there"; fi
     done < <(printf '%s' "$kids" | jq -r '.[] | [.number, .state, (.stateReason // "open"), .title] | @tsv')
   else

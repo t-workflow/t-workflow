@@ -11,6 +11,9 @@ set -uo pipefail
 pr="${1:-}"; [ -n "$pr" ] || { sed -n '2,8p' "$0" | sed 's/^# //'; exit 2; }
 v=$(gh pr view "$pr" --json headRefOid,isDraft) || die "cannot read PR #$pr"
 head=$(printf '%s' "$v" | jq -r .headRefOid)
+# gh answers a flag-shaped argument with its help text and exit 0: no head, and an
+# empty --commit would list every run in the repository.
+[ -n "$head" ] && [ "$head" != null ] || die "PR #$pr has no head commit"
 if [ "$(printf '%s' "$v" | jq -r .isDraft)" = true ]; then
   echo "PR #$pr is a draft: CI runs when /t-ship marks it ready, and will see the review then"; exit 0
 fi
