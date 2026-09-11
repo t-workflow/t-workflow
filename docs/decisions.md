@@ -3,6 +3,14 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-11 — The contract carries rules, not rationale
+
+The CI paragraph in `.t-workflow/AGENTS.md` had grown to about 180 words of threat
+model that every agent read at every stage. It is cut to the rules an agent acts on;
+the reasoning stays in the workflow file's header comment and in this file. For the
+same reason the task issue form requires only Goal and Done when: the pipeline runs
+without a declared Scope or Non-goals, so a form must not demand them.
+
 ## 2026-09-11 — The gate's workflow bootstraps itself on the PR that changes it
 
 `pull_request_target` (#13) is read from the base branch, so the PR that introduces or
