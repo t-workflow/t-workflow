@@ -73,18 +73,14 @@ else
       printf '%s' "$iv" | jq -e '.labels | any(.name == "initiative")' >/dev/null && parent_pr=yes
     else issue_unread=yes; fi
   fi
-  # check_record <id> <path>: the record read through PR_REF (never assumed on disk).
-  # A record the PR deletes is accepted only when the issue it belongs to — the PR's
-  # own, or a child's on a parent's PR — is closed as not planned: that is /t-cancel's
-  # revert of a child already on an integration branch.
+  # check_record <id> <path> [state reason]: the record read through PR_REF (never
+  # assumed on disk). A record the PR deletes is accepted only when the issue it
+  # belongs to is closed as not planned — the PR's own issue, or on a parent's PR the
+  # child's, whose state the caller already holds: that is /t-cancel's revert of a
+  # child already on an integration branch.
   check_record() {
-    local rid="$1" rec="$2" out rec_check rstate="$istate" rreason="$ireason" rv
+    local rid="$1" rec="$2" rstate="${3:-$istate}" rreason="${4:-$ireason}" out rec_check
     if ! git cat-file -e "$PR_REF:$rec" 2>/dev/null; then
-      if [ "$rid" != "$id" ]; then
-        if rv=$(gh issue view "$rid" --json state,stateReason 2>/dev/null); then
-          rstate=$(printf '%s' "$rv" | jq -r .state); rreason=$(printf '%s' "$rv" | jq -r '.stateReason // ""')
-        else fail "record $rec is deleted in this PR, and issue #$rid cannot be read"; return; fi
-      fi
       if [ "$rstate" = CLOSED ] && [ "$rreason" = NOT_PLANNED ]; then ok "record $rec removed by the revert of cancelled #$rid"
       else fail "record $rec is deleted in this PR, and #$rid is not cancelled"; fi
       return
@@ -112,9 +108,9 @@ else
           rec=$(printf '%s\n' "$changed" | grep -E "^docs/tasks/$cnum-[^/]+\.md$" | head -1)
           if [ "$cstate" = OPEN ]; then fail "child #$cnum ($ctitle) is still open"
           elif [ "$creason" = COMPLETED ]; then
-            if [ -z "$rec" ]; then fail "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in this PR"; else check_record "$cnum" "$rec"; fi
+            if [ -z "$rec" ]; then fail "completed child #$cnum has no record docs/tasks/$cnum-<slug>.md in this PR"; else check_record "$cnum" "$rec" "$cstate" "$creason"; fi
           elif [ -n "$rec" ] && git cat-file -e "$PR_REF:$rec" 2>/dev/null; then fail "cancelled child #$cnum is still on $HEAD_REF (its record is in the diff)"
-          elif [ -n "$rec" ]; then check_record "$cnum" "$rec"
+          elif [ -n "$rec" ]; then check_record "$cnum" "$rec" "$cstate" "$creason"
           else ok "cancelled child #$cnum is not in the diff"; fi
         done < <(printf '%s' "$kids" | jq -r '.[] | [.number, .state, (.stateReason // "open"), .title] | @tsv')
       else fail "cannot read the children of #$id"; fi

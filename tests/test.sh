@@ -413,9 +413,10 @@ case "$1 $2" in
   "api graphql")
     # RULES: the existing branchProtectionRules nodes; RULES_FAIL=1 fails the read;
     # CREATE_FAILS=upgrade refuses the create the way a free private repository does.
-    # Writes land in $CALLS as "GRAPHQL create|update <-F values>".
+    # Writes land in $CALLS as "GRAPHQL create <-F values>" or "GRAPHQL update <variables JSON>".
     vars=""; args=("$@"); for i in "${!args[@]}"; do [ "${args[$i]}" = "-F" ] && vars="$vars ${args[$((i+1))]}"; done
-    case "$*" in
+    q="$*"; [[ "$*" == *"--input -"* ]] && { body=$(cat); q=$(printf '%s' "$body" | jq -r .query); vars=" $(printf '%s' "$body" | jq -c .variables)"; }
+    case "$q" in
       *branchProtectionRules*) [ "${RULES_FAIL:-}" = 1 ] && { echo "error connecting to api.github.com" >&2; exit 1; }
         printf '{"data":{"repository":{"id":"R_1","branchProtectionRules":{"nodes":%s}}}}' "${RULES:-[]}" ;;
       *createBranchProtectionRule*) [ "${CREATE_FAILS:-}" = upgrade ] && { echo "GraphQL: Upgrade to GitHub Pro or make this repository public to enable this feature. (createBranchProtectionRule)" >&2; exit 1; }
@@ -461,9 +462,9 @@ gql() { grep '^GRAPHQL' "$CALLS" || true; }
 : > "$CALLS"; out=$(PROTECTION=404 pt); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'wip/\*-integration protected' && has "$(gql)" '^GRAPHQL create r=R_1 p=wip/\*-integration$' && ok || bad "protect: no rule for the pattern → created after the trunk's (exit $rc): $out / $(gql)"
 : > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":false,"contexts":["a"]}}' RULES='[{"id":"BPR_main","pattern":"main","requiredStatusCheckContexts":["a"]},{"id":"BPR_int","pattern":"wip/*-integration","requiredStatusCheckContexts":["build","checks"]}]' pt --remove checks --add sonar); rc=$?
-[ "$rc" -eq 0 ] && has "$out" 'wip/\*-integration required checks now: build t-workflow sonar' && has "$(gql)" '^GRAPHQL update id=BPR_int ctx\[\]=build ctx\[\]=t-workflow ctx\[\]=sonar$' && ! has "$(gql)" 'create' && ok || bad "protect: an existing pattern rule is merged into, not replaced, the contexts sent as a typed list (exit $rc): $out / $(gql)"
+[ "$rc" -eq 0 ] && has "$out" 'wip/\*-integration required checks now: build t-workflow sonar' && has "$(gql)" '^GRAPHQL update {"id":"BPR_int","ctx":\["build","t-workflow","sonar"\]}$' && ! has "$(gql)" 'create' && ok || bad "protect: an existing pattern rule is merged into, not replaced, the contexts sent as a JSON list (exit $rc): $out / $(gql)"
 : > "$CALLS"; out=$(PROTECTION='{"required_status_checks":{"strict":false,"contexts":["t-workflow"]}}' RULES='[{"id":"BPR_int","pattern":"wip/*-integration","requiredStatusCheckContexts":["t-workflow"]}]' pt --remove t-workflow); rc=$?
-[ "$rc" -eq 0 ] && has "$(gql)" '^GRAPHQL update id=BPR_int$' && ok || bad "protect: an empty contexts list is sent, not an unbound-variable abort (exit $rc): $out / $(gql)"
+[ "$rc" -eq 0 ] && has "$(gql)" '^GRAPHQL update {"id":"BPR_int","ctx":\[\]}$' && ok || bad "protect: an empty contexts list is sent as an empty list, the variable present (exit $rc): $out / $(gql)"
 : > "$CALLS"; out=$(PROTECTION=404 CREATE_FAILS=upgrade pt); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'not available on this repository' && has "$out" 'wip/\*-integration rule holds by convention' && [ -z "$(gql)" ] && ok || bad "protect: a plan refusal on the pattern rule is reported, exit 0 (exit $rc): $out"
 : > "$CALLS"; out=$(PROTECTION=404 RULES_FAIL=1 pt); rc=$?

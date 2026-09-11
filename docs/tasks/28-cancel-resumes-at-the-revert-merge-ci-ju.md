@@ -17,10 +17,11 @@ Close the three findings the second cold review of #26 left open. First, `/t-can
 ## Decisions made along the way
 - The second-pass rule sits at the top of the cancel skill, before step 1, because a literal second run reaches step 4 before step 5; step 5 only points back to it.
 - `ci.sh` reads the record's own issue only when the record is deleted and belongs to a different issue than the PR's (a child's on a parent's PR): one tracker read, in the one case where it matters. The parent loop now tells a deleted record from a present one, so a cancelled child's record deleted by the PR is judged by that child's state instead of read as "still on the branch".
-- The empty contexts list is sent as an empty list, matching what the trunk's REST path already does for the same flag.
+- The empty contexts list is sent as an empty list, matching what the trunk's REST path already does for the same flag. That needs the request built as a JSON body (`gh api graphql --input -`): `-F 'ctx[]=…'` cannot express an empty list, and a non-null variable that is absent is rejected by GitHub.
+- On a parent's PR, `ci.sh` judges a deleted child's record by the state the children loop already holds; no second tracker read.
 
 ## Deviations / notes
-- none
+- Fix pass after the cold review: its Medium was right — the guarded array expansion sent no variable at all when the list was empty, which GitHub rejects; the update mutation now goes as a JSON body with the list explicit, and the test asserts the empty list is present (verified against GitHub with a read-only query of the same variable typing). Its two Low notes taken too: the cancel skill names the exact resume commands and how to find the revert PR, and the second tracker read for a child's state is gone.
 
 ## Origin
 The second cold review of #26 (PR #27) rated these Medium and Low; they were carried
