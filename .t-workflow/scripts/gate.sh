@@ -70,7 +70,8 @@ work)
   base="$trunk"
   if [ "$kind" = child ]; then
     base=$(integration_branch "$parent")
-    if ! gh issue view "$parent" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -qE '(^|,)initiative(,|$)'; then
+    plabels=$(gh issue view "$parent" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null) || die "cannot read the parent issue #$parent"
+    if ! printf '%s' "$plabels" | grep -qE '(^|,)initiative(,|$)'; then
       block "parent #$parent has no 'initiative' label, so its integration branch would never be judged as a parent's — run: .t-workflow/scripts/issue.sh ensure-label initiative && gh issue edit $parent --add-label initiative"
     elif ! git show-ref -q --verify "refs/remotes/origin/$base"; then
       if perr=$(git push -q origin "origin/$trunk:refs/heads/$base" 2>&1) && git fetch -q origin 2>/dev/null; then

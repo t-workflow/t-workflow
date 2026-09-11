@@ -31,12 +31,22 @@ Separately, and not a file change: the `tests (ubuntu-latest)`, `tests (macos-la
 
 ## Decisions made along the way
 - A `$` inside a double-quoted config value was accepted before, as literal text, never expanded. The issue's done-when asks for a `$VAR` line to be ignored and said, and a literal `$HOME` is never what an author meant, so the parser now refuses a `$` in the value the way it refuses an inner quote. That is the one narrowing of what the parser accepts, and it is said on stderr rather than read as empty in silence.
-- The retired form is recognised by git blob id, not by a copy of its bytes: `RETIRED` in `install.sh` carries the two ids this repository ever shipped (the tagged one and the one on the trunk after #34), and the test writes the tagged bytes and asserts their id before relying on them.
+- The retired form is recognised by git blob id, not by a copy of its bytes: `RETIRED` in `install.sh` carries the only two ids the path has ever had in this repository's history (the one #23 wrote, the one #34 wrote). No tag ever contained the form: v0.0.5 predates #23, so a consumer has one only from an install off the trunk. The issue's premise that "an earlier release wrote it" was wrong on that point; the mechanism is the same either way. The test writes the #23 bytes and asserts their id before relying on them.
 - The work gate checks the parent's label before creating the integration branch, so an unlabelled parent's child never gets a branch that CI would judge as a task's.
 - The parent gate and CI accept a trunk-resident record only at the exact `docs/tasks/<child>-*.md` path on the trunk; the record itself is not re-validated there, since it passed its own gate when that child shipped.
 
 ## Deviations / notes
 - `CLAUDE.md` is a symlink to `AGENTS.md` in this repository, so the rule change lands in `AGENTS.md`; the plan was amended to say so before the edit, and nothing else in the plan changed.
-- The required-checks change was not made. `.t-workflow/scripts/protect.sh --add "tests (ubuntu-latest)" --add "tests (macos-latest)" --add shellcheck` is a live write to this repository's `main` protection, and the agent session's permission layer refused to run it. The command is unchanged and is the one hand step left; the record is to be updated with its output once it has run.
+- The required-checks change was made on the fix pass, after the review: the agent session's permission layer refused the write on the first pass, and the human allowed a second attempt. `.t-workflow/scripts/protect.sh --add "tests (ubuntu-latest)" --add "tests (macos-latest)" --add shellcheck` printed:
+  ```
+  repository: t-workflow/t-workflow  trunk: main
+  OK: squash merges only, merged branches deleted
+  required checks before: t-workflow
+  OK: required checks now: t-workflow tests (ubuntu-latest) tests (macos-latest) shellcheck— every other protection rule left as it was
+  OK: wip/*-integration protected — PRs only, 't-workflow' check required, no force pushes, deletions allowed
+  ```
+  `gh api repos/t-workflow/t-workflow/branches/main/protection --jq .required_status_checks.contexts` then returned the four names. The `wip/*-integration` rule did not exist on this repository before and was created by the same run.
+- The review's medium finding was right: the plan's Risks sentence and the first version of this record said the form's bytes were "as v0.0.0 to v0.0.5 wrote it", and no tag ever contained it. The record, the decisions entry, and the test's failure message now say what is true; the plan is left as written, this note being its correction.
+- The review's low finding 3 is addressed: a failed read of the parent issue at the work gate is now exit 2 (could not evaluate), not a block that tells the human to add a label.
 - `shellcheck` is not installed on the working machine; its only run is the `shellcheck` job in CI.
 - `tests/test.sh`'s config-values case now silences stderr, since the lines it feeds the parser are exactly the ones the parser now reports; the new case next to it asserts the reports.

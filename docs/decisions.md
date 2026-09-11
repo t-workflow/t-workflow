@@ -18,7 +18,8 @@ GitHub issue forms emit every field as a `###` heading and the scripts read `##`
 a form-filed issue was never read. Teaching `section()` both levels would make every
 reader tolerate two shapes for one field forever; the form is the thing nobody needed.
 It leaves the owned set, and the updater removes a consumer's copy only when its bytes
-are a copy a release wrote. A `$` in a config value is refused the same way an inner
+are one of the two this repository's trunk ever carried (no tag had it; a consumer
+has one only from an install off the trunk). A `$` in a config value is refused the same way an inner
 quote is: the value was never expanded, so a literal `$HOME` was never what anyone
 meant, and an ignored line is now said on stderr rather than read as empty in silence.
 

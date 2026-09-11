@@ -179,7 +179,7 @@ out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || 
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update (comments)"
 (cd "$tmp/c" && grep -q '^# CI does not run it' .t-workflow/config && ! grep -q 'Check 1 still runs' .t-workflow/config && grep -q '^check="mine"' .t-workflow/config) && ok || bad "install: update rewrites the old default comments and keeps the values: $(grep -E '^#|^check=' "$tmp/c/.t-workflow/config" | head -8)"
 (cd "$tmp/c" && grep -q '^# Parsed by .t-workflow/scripts/\*, never executed' .t-workflow/config && grep -q '^# inside the value, no variables' .t-workflow/config && ! grep -q '^# Shell syntax' .t-workflow/config) && ok || bad "install: update rewrites the old 'shell syntax' header to the parsed-not-executed one: $(head -3 "$tmp/c/.t-workflow/config")"
-# a retired owned file: removed on update only when it is byte-for-byte a release's copy
+# a retired owned file: removed on update only when it is byte-for-byte a copy this repository shipped
 mkdir -p "$tmp/c/.github/ISSUE_TEMPLATE" && cat > "$tmp/c/.github/ISSUE_TEMPLATE/task.yml" <<'FORM'
 name: Task
 description: A single piece of work for the t-workflow pipeline.
@@ -213,7 +213,7 @@ body:
     validations:
       required: true
 FORM
-[ "$(git hash-object "$tmp/c/.github/ISSUE_TEMPLATE/task.yml")" = b774760dd3dad869983e021d21693afecd191646 ] && ok || bad "install: the fixture is not the form the tagged releases wrote (blob $(git hash-object "$tmp/c/.github/ISSUE_TEMPLATE/task.yml"))"
+[ "$(git hash-object "$tmp/c/.github/ISSUE_TEMPLATE/task.yml")" = b774760dd3dad869983e021d21693afecd191646 ] && ok || bad "install: the fixture is not the form the trunk carried before #34 (blob $(git hash-object "$tmp/c/.github/ISSUE_TEMPLATE/task.yml"))"
 (cd "$tmp/c" && git add -A && git commit -qm "the old form")
 out=$(bash "$ROOT/install.sh" v4 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update (retired form): $out"
 [ ! -e "$tmp/c/.github/ISSUE_TEMPLATE/task.yml" ] && has "$out" 'remove: .github/ISSUE_TEMPLATE/task.yml (retired' && ok || bad "install: update removes the release's own copy of a retired file: $out"
