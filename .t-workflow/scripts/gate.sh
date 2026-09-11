@@ -68,9 +68,9 @@ work)
   if [ "$kind" = child ]; then
     base=$(integration_branch "$parent")
     if ! git show-ref -q --verify "refs/remotes/origin/$base"; then
-      if git push -q origin "origin/$trunk:refs/heads/$base" 2>/dev/null && git fetch -q origin 2>/dev/null; then
+      if perr=$(git push -q origin "origin/$trunk:refs/heads/$base" 2>&1) && git fetch -q origin 2>/dev/null; then
         echo "base: $base (integration branch of #$parent, created from origin/$trunk)"
-      else block "could not create $base from origin/$trunk on origin"; fi
+      else block "could not create $base from origin/$trunk on origin: $(printf '%s' "$perr" | grep -v '^$' | tail -2 | tr '\n' ' ')"; fi
     else echo "base: $base (integration branch of #$parent)"; fi
   else echo "base: $trunk"; fi
 

@@ -63,10 +63,26 @@ elif [ "$exempt_branch" = yes ]; then
   ok "branch $HEAD_REF is exempt from the task gates (config: exempt)"
 else
   id=$(printf '%s' "$HEAD_REF" | sed -n -E 's#^wip/([0-9]+)-.+#\1#p')
-  parent_pr=no; printf '%s' "$HEAD_REF" | grep -qE '^wip/[0-9]+-integration$' && parent_pr=yes
+  # The issue: its body (the plan), and whether it is a parent — the label, never the
+  # branch's slug, so a task that happens to be called "integration" is still a task.
+  parent_pr=no; body=""; istate=""; ireason=""
+  if [ -n "$id" ]; then
+    if iv=$(gh issue view "$id" --json body,state,stateReason,labels 2>/dev/null); then
+      body=$(printf '%s' "$iv" | jq -r .body | normalize)
+      istate=$(printf '%s' "$iv" | jq -r .state); ireason=$(printf '%s' "$iv" | jq -r '.stateReason // ""')
+      printf '%s' "$iv" | jq -e '.labels | any(.name == "initiative")' >/dev/null && parent_pr=yes
+    else issue_unread=yes; fi
+  fi
   # check_record <id> <path>: the record read through PR_REF (never assumed on disk).
+  # A record the PR deletes is accepted only for a task closed as not planned: that is
+  # /t-cancel's revert of a child already on an integration branch.
   check_record() {
     local rid="$1" rec="$2" out rec_check
+    if ! git cat-file -e "$PR_REF:$rec" 2>/dev/null; then
+      if [ "$istate" = CLOSED ] && [ "$ireason" = NOT_PLANNED ]; then ok "record $rec removed by the revert of cancelled #$rid"
+      else fail "record $rec is deleted in this PR, and #$rid is not cancelled"; fi
+      return
+    fi
     if [ "$PR_REF" = HEAD ]; then
       out=$("$TW_SCRIPTS/record.sh" check "$rid" "$rec") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
     else
@@ -102,7 +118,7 @@ else
     # Title
     printf '%s' "$PR_TITLE" | grep -qE "^\[$id\] ." && ok "title starts with [$id]" || fail "PR title must start with '[$id] '"
     # Issue: plan and blockers
-    if raw=$(gh issue view "$id" --json body -q .body 2>/dev/null); then body=$(printf '%s\n' "$raw" | normalize); else fail "cannot read issue #$id"; body=""; fi
+    [ "${issue_unread:-}" = yes ] && fail "cannot read issue #$id"
     plans=$(printf '%s\n' "$body" | count_sections Plan)
     if prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh"); then
       echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"

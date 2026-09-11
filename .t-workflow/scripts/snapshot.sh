@@ -19,7 +19,7 @@ review)
   children='[]'
   if printf '%s' "$issue" | jq -e '.labels | index("initiative")' >/dev/null; then
     children=$(children_json "$id" | jq -c --argjson files "$(printf '%s' "$prv" | jq -c .files)" \
-      '[.[] | . + {record: ($files | map(select(test("^docs/tasks/\\(.number)-[^/]+\\.md$"))) | first)}]')
+      '[.[] | . + {record: (. as $c | $files | map(select(test("^docs/tasks/\($c.number)-[^/]+\\.md$"))) | first)}]')
     while IFS= read -r c; do
       [ -n "$c" ] || continue
       cplan=$(gh issue view "$c" --json body -q .body | normalize | section Plan)

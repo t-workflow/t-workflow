@@ -100,7 +100,7 @@ JSON
 
 # --- integration branches: a pattern rule, which only the GraphQL API can create ----
 protect_integration() {
-  local pattern="wip/*-integration" rules rule rid before new ctx out
+  local pattern="wip/*-integration" rules rule rid before new out c ctx=()
   rules=$(gh api graphql -F o="${nwo%/*}" -F n="${nwo#*/}" -f query='query($o:String!,$n:String!){repository(owner:$o,name:$n){id branchProtectionRules(first:100){nodes{id pattern requiredStatusCheckContexts}}}}' 2>"$err") \
     || { echo "FAIL: could not read the branch protection rules; nothing was changed:"; sed 's/^/  /' "$err"; return 2; }
   rid=$(printf '%s' "$rules" | jq -r .data.repository.id)
@@ -116,8 +116,8 @@ protect_integration() {
   before=$(printf '%s' "$rule" | jq -r '.requiredStatusCheckContexts[]?')
   echo "$pattern required checks before: $(printf '%s' "$before" | tr '\n' ' ')"
   new=$(printf '%s\n' "$before" | merge_contexts)
-  ctx=$(printf '%s\n' "$new" | jq -R . | jq -sc .)
-  if gh api graphql -F id="$(printf '%s' "$rule" | jq -r .id)" -F ctx="$ctx" -f query='mutation($id:ID!,$ctx:[String!]!){updateBranchProtectionRule(input:{branchProtectionRuleId:$id,requiresStatusChecks:true,requiredStatusCheckContexts:$ctx}){branchProtectionRule{id}}}' >/dev/null 2>"$err"; then
+  while IFS= read -r c; do [ -n "$c" ] && ctx+=(-F "ctx[]=$c"); done <<< "$new"
+  if gh api graphql -F id="$(printf '%s' "$rule" | jq -r .id)" "${ctx[@]}" -f query='mutation($id:ID!,$ctx:[String!]!){updateBranchProtectionRule(input:{branchProtectionRuleId:$id,requiresStatusChecks:true,requiredStatusCheckContexts:$ctx}){branchProtectionRule{id}}}' >/dev/null 2>"$err"; then
     echo "OK: $pattern required checks now: $(printf '%s' "$new" | tr '\n' ' ')— every other setting of that rule left as it was"
   else echo "FAIL: could not update the $pattern rule:"; sed 's/^/  /' "$err"; return 1; fi
   return 0
