@@ -94,6 +94,68 @@ expect_out "template placeholder" "record: placeholder-only section" "$S/record.
 printf '# 7 — Fixture\nIssue: #7\n\n## Asked\n\n## Done when\nDone.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-empty.md
 expect_out "'## Asked' section is empty" "record: empty section" "$S/record.sh" check 7 docs/tasks/7-empty.md
 
+echo "# record.sh: '## Agents' — absent is legacy, present must carry real entries"
+cat > docs/tasks/20-legacy.md <<'R'
+# 20 — Legacy
+Issue: #20
+
+## Asked
+A.
+
+## Done when
+B.
+
+## Explicitly not
+none
+
+## Decisions made along the way
+- none
+
+## Deviations / notes
+- none
+R
+expect_exit 0 "record: legacy record with no '## Agents' section still passes" "$S/record.sh" check 20 docs/tasks/20-legacy.md
+out=$("$S/record.sh" trailers 20); [ -z "$out" ] && ok || bad "record: trailers of a legacy record with no section is silent: $out"
+
+cat > docs/tasks/21-fresh.md <<'R'
+# 21 — Fresh
+Issue: #21
+
+## Asked
+A.
+
+## Done when
+B.
+
+## Explicitly not
+none
+
+## Decisions made along the way
+- none
+
+## Deviations / notes
+- none
+
+## Agents
+R
+expect_out "'## Agents' section has no entries" "record: create's fresh empty section fails until a stage appends" "$S/record.sh" check 21 docs/tasks/21-fresh.md
+"$S/record.sh" agent 21 plan claude-code claude-fable-5-1 > /dev/null
+expect_exit 0 "record: check passes once a stage appends an entry" "$S/record.sh" check 21 docs/tasks/21-fresh.md
+"$S/record.sh" agent 21 review claude-code claude-opus-5 "subagent, reviewer_model" > /dev/null
+"$S/record.sh" agent 21 work claude-code claude-fable-5-1 > /dev/null
+has "$(cat docs/tasks/21-fresh.md)" '^- plan: claude-code / claude-fable-5-1$' && ok || bad "record: agent appends 'plan' line"
+has "$(cat docs/tasks/21-fresh.md)" '^- review: claude-code / claude-opus-5 (subagent, reviewer_model)$' && ok || bad "record: agent appends 'review' line with its note"
+expect_exit 0 "record: check still passes with several entries" "$S/record.sh" check 21 docs/tasks/21-fresh.md
+out=$("$S/record.sh" trailers 21)
+[ "$out" = "$(printf 'Planned-By: claude-code / claude-fable-5-1\nImplemented-By: claude-code / claude-fable-5-1')" ] && ok || bad "record: trailers map plan/work, skip review (stale in the record): $out"
+"$S/record.sh" agent 21 "work (fix)" claude-code claude-opus-5 > /dev/null
+out=$("$S/record.sh" trailers 21)
+has "$out" '^Implemented-By: claude-code / claude-opus-5$' && ok || bad "record: trailers list one Implemented-By per work pass: $out"
+
+printf '# 22 — Dup\nIssue: #22\n\n## Asked\nA.\n\n## Done when\nB.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n\n## Agents\n- plan: x / y\n\n## Agents\n- work: x / y\n' > docs/tasks/22-dup.md
+expect_out "duplicated '## Agents' section" "record: duplicated Agents section" "$S/record.sh" check 22 docs/tasks/22-dup.md
+rm -f docs/tasks/20-legacy.md docs/tasks/21-fresh.md docs/tasks/22-dup.md
+
 echo "# lib.sh helpers"
 # shellcheck disable=SC1091
 . "$S/lib.sh"
@@ -129,6 +191,10 @@ has "$rv3" '^fresh: no$' && ok || bad "review_verdict: stale when head is newer"
 has "$rv" '^fresh: yes$' && ok || bad "review_verdict: fresh"
 has "$rv" '^pending: unknown$' && ok || bad "review_verdict: missing pending section is unknown"
 has "$rv0" '^verdict: none$' && ok || bad "review_verdict: none"
+has "$rv0" '^agent: none$' && ok || bad "review_verdict: agent is 'none' when there is no review"
+rvm=$(review_verdict '[{"submittedAt":"2026-01-01T00:00:00Z","body":"isolation: subagent\nmodel: claude-code / claude-opus-5\n## Pending human checks\n- none\nreadiness: ready"}]' "")
+has "$rvm" '^agent: claude-code / claude-opus-5$' && ok || bad "review_verdict: agent reads the review's 'model:' line: $rvm"
+has "$rvp" '^agent: $' && ok || bad "review_verdict: agent is blank, not missing, when the review has no 'model:' line: $rvp"
 
 echo "# review_blocks (the ship gate's review rules)"
 rb() { printf '%s\n' "$2" | review_blocks "$1" 9 2>&1; }
