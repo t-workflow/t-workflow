@@ -3,6 +3,28 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-11 — A record's `## Agents` section is required only once it exists
+
+`record.sh check` gates every task in flight, and this project never gates behavior on
+a version or date in a shipped file, so the section could not be made mandatory only
+"from this release on". A record that lacks it entirely passes — that is every record
+written before this change, untouched since — and a record where it is present but
+empty or a placeholder fails. The first stage that runs on a legacy record adds the
+section, and from then on the record is held to it; no record is ever grandfathered
+twice.
+
+## 2026-09-11 — Only `/t-work` writes the record's `## Agents` section
+
+`.t-workflow/AGENTS.md` confines tree edits to a task's own `/t-work` session, so
+`/t-plan` and `/t-review` cannot append to `docs/tasks/<id>-*.md` directly — they leave
+their attribution on the artifact they are already allowed to write (`Planned by:` on
+the issue, `model:` on the PR review), and `/t-work` seeds both into the record the
+next time it runs. `/t-ship`'s own "do not edit anything" rule means a review that
+never triggers a fix pass is never transcribed into the record file at all; its
+attribution still reaches the squash commit because `/t-ship` reads the live review for
+the `Reviewed-By` trailer instead of trusting a (possibly stale, possibly absent) entry
+in the record.
+
 ## 2026-09-10 — A child's record on the trunk counts for its parent
 
 A partly shipped initiative from before integration branches has children that merged
