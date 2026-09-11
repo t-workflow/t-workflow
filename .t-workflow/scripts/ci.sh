@@ -3,18 +3,52 @@
 # (.github/workflows/t-workflow.yml): the workflow gates only — record, title, plan,
 # review, blockers. The project's build is not run here; it belongs to the project's own
 # CI, and the ship gate watches every check on the PR. Environment: BASE_REF, HEAD_REF,
-# PR_NUMBER, PR_TITLE, GH_TOKEN. Every check runs even after one fails; exit 1 when any failed.
+# PR_NUMBER, PR_TITLE, GH_TOKEN, PR_REF (optional). Every check runs even after one
+# fails; exit 1 when any failed.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 cd "$TW_ROOT" || die "not in a repository"
 : "${BASE_REF:?}" "${HEAD_REF:?}" "${PR_NUMBER:?}" "${PR_TITLE:?}"
+# PR_REF names a fetched commit that holds the PR's own content — read from with `git
+# show`/`git diff`, never checked out or executed. The workflow keeps the actual
+# checkout on the base branch and sets PR_REF to a ref it fetched separately, so the
+# PR's code is only ever looked at, never run. The default, HEAD, is what a local run
+# or a direct checkout of the PR already is.
+PR_REF="${PR_REF:-HEAD}"
 rc=0
 ok()   { echo "OK: $*"; }
 fail() { echo "FAIL: $*"; rc=1; }
 
 git fetch -q origin "$BASE_REF" 2>/dev/null || true
-changed=$(git -c core.quotePath=false diff --name-only "origin/$BASE_REF"...HEAD)
+diff_range="origin/$BASE_REF...$PR_REF"
+changed=$(git -c core.quotePath=false diff --name-only "$diff_range")
 [ -n "$changed" ] || fail "this PR changes no files"
+
+# Policy (exempt, protected, docs) is read from the base branch, so a PR cannot
+# judge itself by its own values. check stays the PR's own: a PR that changes the
+# build is tested with its own command, and that change is visible in the diff.
+# The merged copy is exported for the gate's children (protected.sh re-reads the
+# config through lib.sh), so they judge by the same values.
+pr_cfg=$(mktemp); base_cfg=$(mktemp); merged_cfg=$(mktemp)
+trap 'rm -f "$pr_cfg" "$base_cfg" "$merged_cfg"' EXIT
+check_pr="$check"
+if [ "$PR_REF" != HEAD ]; then
+  if git show "$PR_REF:.t-workflow/config" > "$pr_cfg" 2>/dev/null; then load_config "$pr_cfg"; else load_config ""; fi
+  check_pr="$check"
+fi
+if git cat-file -e "origin/$BASE_REF:.t-workflow/AGENTS.md" 2>/dev/null; then
+  if git show "origin/$BASE_REF:.t-workflow/config" > "$base_cfg" 2>/dev/null; then
+    load_config "$base_cfg"
+    check="$check_pr"
+    # shellcheck disable=SC2154 # protected, docs, exempt, reviewer_model: set by load_config (lib.sh), sourced dynamically
+    printf 'check="%s"\nprotected="%s"\ndocs="%s"\nexempt="%s"\nreviewer_model="%s"\n' \
+      "$check" "$protected" "$docs" "$exempt" "$reviewer_model" > "$merged_cfg"
+    export TW_CONFIG_FILE="$merged_cfg"
+    echo "policy: exempt/protected/docs from origin/$BASE_REF; check from the PR"
+  else
+    echo "note: origin/$BASE_REF has no .t-workflow/config; judging by the PR's values"
+  fi
+fi
 
 exempt_branch=no
 # shellcheck disable=SC2086
@@ -30,10 +64,18 @@ else
   if [ -z "$id" ]; then
     fail "branch '$HEAD_REF' is not wip/<id>-<slug>; every PR is a task (or add the branch pattern to config: exempt)"
   else
-    # Record
+    # Record — read through PR_REF (never assumed to be on disk; see PR_REF above)
     rec=$(printf '%s\n' "$changed" | grep -E "^docs/tasks/$id-[^/]+\.md$" | head -1)
-    if [ -z "$rec" ]; then fail "no record docs/tasks/$id-<slug>.md in this PR"
-    else out=$("$TW_SCRIPTS/record.sh" check "$id" "$rec") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"; fi
+    if [ -z "$rec" ]; then
+      fail "no record docs/tasks/$id-<slug>.md in this PR"
+    elif [ "$PR_REF" = HEAD ]; then
+      out=$("$TW_SCRIPTS/record.sh" check "$id" "$rec") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
+    else
+      rec_check="$(mktemp -d)/$rec"; mkdir -p "$(dirname "$rec_check")"
+      if git show "$PR_REF:$rec" > "$rec_check" 2>/dev/null; then
+        out=$("$TW_SCRIPTS/record.sh" check "$id" "$rec_check") && ok "record $rec" || fail "$(printf '%s' "$out" | tr '\n' ';')"
+      else fail "could not read $rec from the PR ($PR_REF)"; fi
+    fi
     # Title
     printf '%s' "$PR_TITLE" | grep -qE "^\[$id\] ." && ok "title starts with [$id]" || fail "PR title must start with '[$id] '"
     # Issue: plan and blockers

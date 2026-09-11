@@ -281,6 +281,19 @@ mkdir -p "$tmp/h/.t-workflow/scripts" && cd "$tmp/h" && git init -q -b main && p
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/h" --no-pr >/dev/null 2>&1 || bad "replace (placeholders only)"
 [ ! -e "$tmp/h/.t-workflow/REPLACED.md" ] && ok || bad "replace: no REPLACED.md when every slot was a placeholder"
 
+echo "# config parsing (never executed)"
+mkdir -p "$tmp/cfg/.t-workflow"
+printf '%s\n' '# a comment' 'check="tests/test.sh"' 'protected="db/migrate/*"' \
+  'check="x"; touch "$tmp/cfg-PWNED"' 'exempt="a" # trailing junk' 'bogus="y"' \
+  'reviewer_model="m"; touch "$tmp/cfg-PWNED2"' > "$tmp/cfg/.t-workflow/config"
+# shellcheck disable=SC2154 # check, protected, exempt, docs, reviewer_model: set by lib.sh, sourced dynamically above
+cfgvals=$(cd "$tmp/cfg" && . "$S/lib.sh" && printf 'check=%s protected=%s exempt=%s docs=%s reviewer=%s' "$check" "$protected" "$exempt" "$docs" "$reviewer_model")
+[ "$cfgvals" = "check=tests/test.sh protected=db/migrate/* exempt= docs= reviewer=" ] && ok || bad "config: plain key=value lines parse, the rest is ignored: $cfgvals"
+[ ! -e "$tmp/cfg-PWNED" ] && [ ! -e "$tmp/cfg-PWNED2" ] && ok || bad "config: a shell payload in the config never runs"
+printf 'protected="zz-only/*"\n' > "$tmp/cfg-base"
+expect_exit 0 "config: TW_CONFIG_FILE redirects the read (the CI merged copy)" env TW_CONFIG_FILE="$tmp/cfg-base" "$S/protected.sh" zz-only/a.txt
+expect_exit 1 "config: without it the working tree's own values apply" bash -c "cd $tmp/cfg && $S/protected.sh zz-only/a.txt"
+
 echo "# ci.sh (offline parts)"
 mkdir -p "$tmp/e" && (cd "$tmp/e" && git init -q -b main && echo base > base.txt && git add -A && git commit -qm init && git clone -q --bare . "$tmp/e-origin" && git remote add origin "$tmp/e-origin" && git fetch -q origin)
 bash "$ROOT/install.sh" v0 --from "$ROOT" --dir "$tmp/e" --no-pr >/dev/null 2>&1 || bad "ci fixture: install"
@@ -300,10 +313,31 @@ has "$out" 'OK: record docs/tasks/5-thing.md' && ok || bad "ci: record ok: $out"
 has "$out" "FAIL: PR title must start with '\\[5\\] '" && ok || bad "ci: title fail: $out"
 has "$out" 'FAIL: cannot read issue #5' && ok || bad "ci: tracker unreachable is a failure, not a pass"
 out=$(ci feature/x x); has "$out" 'is not wip/<id>-<slug>' && ok || bad "ci: non-task branch fails"
+# policy comes from the base branch: the PR cannot exempt itself with its own config
 sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config
-out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch"
+out=$(ci feature/x x); ! has "$out" 'exempt from the task gates' && has "$out" 'is not wip/<id>-<slug>' && ok || bad "ci: a PR cannot exempt itself with its own config: $out"
+git add -A && git commit -qm "self-exempt attempt"
+out=$(ci feature/x x); ! has "$out" 'exempt from the task gates' && ok || bad "ci: a committed self-exempt is still judged by the base: $out"
+has "$out" 'policy: exempt/protected/docs from origin/main' && ok || bad "ci: says where the policy came from: $out"
+# ... but the base can: exempt the branch there and the gate stands down
+git checkout -q main && sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config && git add -A && git commit -qm "exempt feature branches" && git push -q origin main && git fetch -q origin && git checkout -q wip/5-thing
+out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch (policy from the base)"
+# PR_REF: the checkout can stay on main throughout; the PR is only ever read through
+# the ref (this is what the workflow does — checkout stays on the base branch, PR_REF
+# points at a fetched commit — instead of checking the PR out and running from it)
+git checkout -q main
+out=$(PR_REF=wip/5-thing ci wip/5-thing "[5] Thing")
+has "$out" 'OK: record docs/tasks/5-thing.md' && ok || bad "ci: PR_REF reads the record through the ref: $out"
+has "$out" 'OK: title starts with \[5\]' && ok || bad "ci: PR_REF still checks the PR's title: $out"
+[ ! -e docs/tasks/5-thing.md ] && ok || bad "ci: PR_REF never checks the PR's files out onto disk"
+git checkout -q wip/5-thing
 sedi 's|^check=""|check="false"|' .t-workflow/config
 if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
+
+echo "# t-workflow.yml (trigger)"
+wf="$ROOT/.github/workflows/t-workflow.yml"
+grep -qE '^\s*pull_request_target:' "$wf" && ok || bad "workflow: must trigger on pull_request_target, not pull_request, so GitHub reads it from the base branch"
+grep -qE '^\s*pull_request:' "$wf" && bad "workflow: pull_request trigger present — a PR could rewrite this file's own YAML on that trigger" || ok
 
 echo "# rerun-ci.sh (stubbed gh)"
 mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'

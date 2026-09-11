@@ -56,9 +56,15 @@ globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executa
    No command configured → say so.
 2. `git diff <trunk>...HEAD`, read against the task's scope.
 
-CI runs `.t-workflow/scripts/ci.sh` on every PR: the record, title, plan, review, and
-blocker rules only. The project's build runs in the project's own CI; the ship gate
+CI reads this workflow file and every gate script it runs — record, title, plan,
+review, and blocker rules only — from the base branch, never the pull request's own
+copy: the trigger is `pull_request_target`, which GitHub reads from the base branch,
+and the scripts it calls are fetched from there too. A pull request cannot rewrite its
+own enforcement. The project's build runs in the project's own CI; the ship gate
 watches every check on the PR.
+The mechanical gate only checks process — a record, a title, a plan, a review verdict
+— never whether a diff is honest or correct; the cold review and the human-confirmed
+merge are what cover that.
 
 ## Communication
 

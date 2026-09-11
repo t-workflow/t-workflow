@@ -13,10 +13,28 @@ TW_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { echo "ERROR: $*" >&2; exit 2; }
 
-# Config, with defaults. Consumer-owned file; keys are documented there.
+# Config, with defaults. Consumer-owned file; keys are documented there. The file is
+# parsed as plain key="value" lines and never executed; anything else on a line is
+# ignored. TW_CONFIG_FILE points the parse at another file (ci.sh exports a merged
+# base-policy copy so the gate's children judge by the same values).
 check=""; protected=""; docs=""; exempt=""; reviewer_model=""
-# shellcheck disable=SC1091
-[ -f "$TW_DIR/config" ] && . "$TW_DIR/config"
+load_config() {
+  check=""; protected=""; docs=""; exempt=""; reviewer_model=""
+  local cfg="${1:-}" line kv
+  [ -n "$cfg" ] && [ -f "$cfg" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model)="([^"]*)"[[:space:]]*$/\1=\2/p')
+    case "$kv" in
+      check=*) check="${kv#check=}" ;;
+      protected=*) protected="${kv#protected=}" ;;
+      docs=*) docs="${kv#docs=}" ;;
+      exempt=*) exempt="${kv#exempt=}" ;;
+      reviewer_model=*) reviewer_model="${kv#reviewer_model=}" ;;
+    esac
+  done < "$cfg"
+}
+load_config "${TW_CONFIG_FILE:-$TW_DIR/config}"
 
 trunk() { "$TW_SCRIPTS/trunk.sh"; }
 
