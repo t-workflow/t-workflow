@@ -334,10 +334,64 @@ git checkout -q wip/5-thing
 sedi 's|^check=""|check="false"|' .t-workflow/config
 if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
 
-echo "# t-workflow.yml (trigger)"
+echo "# t-workflow.yml: the triggers, and the gate step in three base shapes"
 wf="$ROOT/.github/workflows/t-workflow.yml"
-grep -qE '^\s*pull_request_target:' "$wf" && ok || bad "workflow: must trigger on pull_request_target, not pull_request, so GitHub reads it from the base branch"
-grep -qE '^\s*pull_request:' "$wf" && bad "workflow: pull_request trigger present — a PR could rewrite this file's own YAML on that trigger" || ok
+# pull_request_target judges (GitHub reads it from the base); pull_request exists only
+# for PRs that touch this file, whose base copy is missing or has the wrong trigger.
+grep -qE '^  pull_request_target:' "$wf" && ok || bad "workflow: must trigger on pull_request_target, so GitHub reads it from the base branch"
+awk '/^  pull_request:/{f=1; next} f && /^  [a-z]/{exit} f' "$wf" | grep -qE "^    paths: \['\.github/workflows/t-workflow\.yml'\]" && ok || bad "workflow: pull_request must be filtered to PRs that touch the workflow file, and nothing else"
+awk '/^  pull_request_target:/{f=1; next} f && /^  [a-z]/{exit} f' "$wf" | grep -q 'paths' && bad "workflow: pull_request_target must not be path-filtered" || ok
+grep -qE '^  group: t-workflow-\$\{\{ github\.event_name \}\}-' "$wf" && ok || bad "workflow: the concurrency group must include the event, or the two runs on a PR touching this file cancel each other"
+# The step itself, extracted from the YAML so the test cannot drift from what runs.
+step=$(awk '/^        run: \|$/{f=1; next} f && /^          /{sub(/^          /, ""); print; next} f{exit}' "$wf")
+has "$step" 'git archive "\$scripts_ref" .t-workflow/scripts' && ok || bad "workflow: could not extract the run step from the YAML"
+# gate_run <origin> <checkout-ref> <base-ref> <pr-ref>: the step as CI runs it — a
+# fresh checkout at <checkout-ref>, refs/pull/1/head pointing at the PR, one env.
+gate_run() {
+  git -C "$1" update-ref refs/pull/1/head "$(git -C "$1" rev-parse "$4")"
+  rm -rf "$tmp/runner"; git clone -q "$1" "$tmp/runner" && cd "$tmp/runner" || return 9
+  git fetch -q origin '+refs/pull/*:refs/pull/*' && git checkout -q --detach "$2" || return 9
+  (export BASE_REF="$3" HEAD_REF=wip/1-x PR_NUMBER=1 PR_TITLE="[1] x" GH_TOKEN=x PR_REF=refs/heads/_pr_head PATH="$tmp/bin:$PATH"; bash -c "$step" 2>&1)
+}
+# origin_shape <dir>: a bare origin whose main is <dir>'s main; PR branch wip/1-x.
+mk_origin() { git clone -q --bare "$1" "$1.git"; echo "$1.git"; }
+stub_ci() { # <dir> <marker> <exit>: a .t-workflow/scripts/ci.sh that says which copy ran
+  mkdir -p "$1/.t-workflow/scripts"
+  printf '#!/usr/bin/env bash\necho "ran: %s"\necho "checkout: $(git rev-parse HEAD)"\ngit diff --name-only "origin/$BASE_REF...${PR_REF:-HEAD}"\nexit %s\n' "$2" "$3" > "$1/.t-workflow/scripts/ci.sh"
+  chmod +x "$1/.t-workflow/scripts/ci.sh"
+}
+# 1. Adoption: the base has no .t-workflow at all; the PR brings the real scripts, so
+#    they run and ci.sh's adoption exemption passes. Checkout is the merge commit, as
+#    under pull_request.
+mkdir -p "$tmp/w1" && (cd "$tmp/w1" && git init -q -b main && echo base > base.txt && git add -A && git commit -qm init) || bad "w1 init"
+o1=$(mk_origin "$tmp/w1"); git -C "$tmp/w1" remote add origin "$o1"; git -C "$tmp/w1" fetch -q origin
+(cd "$tmp/w1" && git checkout -q -b wip/1-x && bash "$ROOT/install.sh" v0 --from "$ROOT" --dir . --no-pr >/dev/null 2>&1 && git add -A && git commit -qm adopt && git push -q origin wip/1-x && git checkout -q main && git merge -q --no-ff -m merge wip/1-x && git push -q origin HEAD:refs/pull/1/merge && git reset -q --hard origin/main) || bad "w1: build the adoption PR"
+out=$(gate_run "$o1" refs/pull/1/merge main wip/1-x); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'adoption PR: main has no t-workflow yet' && ok || bad "step, adoption: the PR's scripts run and the exemption passes (exit $rc): $out"
+# 2. Update from before the trigger: the base carries scripts and the old workflow
+#    (pull_request); the PR changes the workflow and its own ci.sh, which must not run.
+#    Checkout is the merge commit, as under pull_request.
+mkdir -p "$tmp/w2" && (cd "$tmp/w2" && git init -q -b main && mkdir -p .t-workflow .github/workflows && echo rules > .t-workflow/AGENTS.md && printf 'on:\n  pull_request:\n' > .github/workflows/t-workflow.yml) || bad "w2 init"
+stub_ci "$tmp/w2" "the base's copy (before the trigger change)" 0
+(cd "$tmp/w2" && git add -A && git commit -qm base) || bad "w2 base"
+o2=$(mk_origin "$tmp/w2"); git -C "$tmp/w2" remote add origin "$o2"; git -C "$tmp/w2" fetch -q origin
+(cd "$tmp/w2" && git checkout -q -b wip/1-x && cp "$wf" .github/workflows/t-workflow.yml && stub_ci . "the PR's copy" 1 && git add -A && git commit -qm update && git push -q origin wip/1-x && git checkout -q main && git merge -q --no-ff -m merge wip/1-x && git push -q origin HEAD:refs/pull/1/merge && git reset -q --hard origin/main) || bad "w2: build the update PR"
+out=$(gate_run "$o2" refs/pull/1/merge main wip/1-x); rc=$?
+[ "$rc" -eq 0 ] && has "$out" "ran: the base's copy" && ! has "$out" "ran: the PR's copy" && ok || bad "step, update: the base's scripts judge the PR, never the PR's (exit $rc): $out"
+has "$out" '.github/workflows/t-workflow.yml' && ok || bad "step, update: the base's scripts see the PR's diff through PR_REF: $out"
+has "$out" "checkout: $(git -C "$o2" rev-parse refs/pull/1/merge)" && ok || bad "step, update: the checkout is the merge commit, as under pull_request, and the step does not care: $out"
+# 3. Steady state: the base carries the new workflow; a PR edits it and ci.sh. The
+#    base's copy runs, from a checkout on the base, as under pull_request_target.
+mkdir -p "$tmp/w3" && (cd "$tmp/w3" && git init -q -b main && mkdir -p .t-workflow .github/workflows && echo rules > .t-workflow/AGENTS.md && cp "$wf" .github/workflows/t-workflow.yml) || bad "w3 init"
+stub_ci "$tmp/w3" "the base's copy" 0
+(cd "$tmp/w3" && git add -A && git commit -qm base) || bad "w3 base"
+o3=$(mk_origin "$tmp/w3"); git -C "$tmp/w3" remote add origin "$o3"; git -C "$tmp/w3" fetch -q origin
+(cd "$tmp/w3" && git checkout -q -b wip/1-x && echo "# edited" >> .github/workflows/t-workflow.yml && stub_ci . "the PR's copy" 1 && git add -A && git commit -qm edit && git push -q origin wip/1-x && git checkout -q main) || bad "w3: build the PR"
+out=$(gate_run "$o3" main main wip/1-x); rc=$?
+[ "$rc" -eq 0 ] && has "$out" "ran: the base's copy" && ! has "$out" "ran: the PR's copy" && ok || bad "step, steady state: the base's scripts judge a PR that rewrites them (exit $rc): $out"
+has "$out" "checkout: $(git -C "$o3" rev-parse main)" && ok || bad "step, steady state: the checkout is the base, as under pull_request_target: $out"
+# A PR that deletes the workflow file has no pull_request run (no file in its tree) and
+# is still judged by the base's pull_request_target run: nothing in the step to test.
 
 echo "# rerun-ci.sh (stubbed gh)"
 mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'
@@ -361,6 +415,12 @@ out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"success"}]' rr);
 out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"skipped"}]' rr); has "$out" 'was skipped.*nothing to re-run' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: skipped run is not re-run: $out"
 out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"},{"databaseId":8,"status":"completed","conclusion":"success"}]' rr)
 has "$out" 're-running t-workflow run 9 at abc123 (was failure)' && [ "$(cat "$RERUNS")" = 9 ] && ok || bad "rerun-ci: re-runs the newest red run: $out / $(cat "$RERUNS")"
+: > "$RERUNS"
+# A PR that touches the workflow file has two runs at one commit (both events); both red
+# until the review exists, and one left red still blocks, so every red one is re-run.
+out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"},{"databaseId":8,"status":"completed","conclusion":"failure"},{"databaseId":7,"status":"completed","conclusion":"success"}]' rr)
+[ "$(sort "$RERUNS" | tr '\n' ' ')" = "8 9 " ] && has "$out" 're-running t-workflow run 8' && has "$out" 'run 7 at abc123 is already green' && ok || bad "rerun-ci: re-runs every red run at the head: $out / $(cat "$RERUNS")"
+: > "$RERUNS"
 out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' RERUN_FAILS=1 rr); rc=$?
 [ "$rc" -eq 1 ] && has "$out" 'could not re-run' && ok || bad "rerun-ci: reports a failed re-run (exit $rc): $out"
 out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok || bad "rerun-ci: a failed run list is an error, not 'no run' (exit $rc): $out"

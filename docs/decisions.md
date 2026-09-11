@@ -3,6 +3,22 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-11 — The gate's workflow bootstraps itself on the PR that changes it
+
+`pull_request_target` (#13) is read from the base branch, so the PR that introduces or
+changes that trigger gets no run from it, and the required check never reports: #22
+itself merged by admin bypass, and every adoption and every update from v0.0.5 would
+have needed the same. The workflow now also listens on `pull_request`, filtered to
+PRs that touch the workflow file, which are exactly the ones whose base copy is missing
+or has the wrong trigger; no other PR gets that run at all. Where both fire, GitHub
+requires every run under the check's name to pass (verified 2026-09-11 in a live
+repository, four PRs, every order of red and green), so the PR's own run cannot
+override the base's. The concurrency key carries the event so the two runs do not
+cancel each other, and `rerun-ci.sh` re-runs every red run at the head rather than the
+first listed. The alternative, an installer that drops the required check and puts it
+back after the merge, was rejected as a hand step with a window where the trunk has
+no gate.
+
 ## 2026-09-10 — An initiative lands through one integration branch
 
 A child's PR on its own is not always self-consistent — a rename in one child and its

@@ -63,15 +63,18 @@ globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executa
 2. `git diff <trunk>...HEAD`, read against the task's scope.
 
 CI reads this workflow file and every gate script it runs — record, title, plan,
-review, and blocker rules only — from the pull request's base branch, never its own
-copy: the trigger is `pull_request_target`, which GitHub reads from the base branch,
-and the scripts it calls are fetched from there too. A child of an initiative is
+review, and blocker rules only — from the pull request's base branch, not from the
+pull request: the trigger is `pull_request_target`, which GitHub reads from the base
+branch, and the scripts it calls are fetched from there too. A child of an initiative is
 therefore judged by the integration branch's copy of the scripts and policy, and the
 initiative's PR to the trunk by the trunk's copy, on the combined diff. The guarantee
 that a pull request cannot rewrite its own enforcement holds at the trunk; the gate
 before a child merge is mechanical only, and what it enforces is whatever has already
-landed on the integration branch under that gate. The project's build runs in the
-project's own CI; the ship gate watches every check on the PR.
+landed on the integration branch under that gate. A pull request that changes the
+workflow file itself also runs its own copy, so the file can reach a repository whose
+base has none or has an older trigger; that run can add a red result, never replace
+the base's. The project's build runs in the project's own CI; the ship gate watches
+every check on the PR.
 The mechanical gate only checks process — a record, a title, a plan, a review verdict
 — never whether a diff is honest or correct; the cold review and the human-confirmed
 merge are what cover that.
