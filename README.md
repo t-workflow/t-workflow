@@ -35,8 +35,10 @@ automatic home is listed in `.t-workflow/REPLACED.md`.
 Ask your agent to `/t-update`, or run the same install command again. Every
 t-workflow-owned file is replaced with the release's copy; `AGENTS.md` and
 `.t-workflow/config` are never touched, except that a key a release added is appended
-with its default. The update PR's diff, and the commits between the two tags that the
-installer prints, are the changelog. A release is a tag; nothing else.
+with its default. Branch protection is brought to the release's rules the same way as
+at install — existing rules kept, the integration-branch rule added if missing —
+unless `--no-protect`. The update PR's diff, and the commits between the two tags that
+the installer prints, are the changelog. A release is a tag; nothing else.
 
 ## What lands in your repository
 

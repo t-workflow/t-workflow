@@ -157,7 +157,8 @@ cd "$tmp/b" || exit
 [ -L CLAUDE.md ] && [ -L GEMINI.md ] && [ -L .agents/skills ] && ok || bad "install: symlinks"
 grep -q '^check=""' .t-workflow/config && ok || bad "install: pristine config, not this repo's"
 head -1 AGENTS.md | grep -q '.t-workflow/AGENTS.md' && ok || bad "install: AGENTS.md pointer"
-for p in .t-workflow/scripts/gate.sh .claude/skills/t-work/SKILL.md .github/workflows/t-workflow.yml .github/ISSUE_TEMPLATE/task.yml docs/tasks/TEMPLATE.md; do [ -e "$p" ] || bad "install: missing $p"; done; ok
+for p in .t-workflow/scripts/gate.sh .claude/skills/t-work/SKILL.md .github/workflows/t-workflow.yml docs/tasks/TEMPLATE.md; do [ -e "$p" ] || bad "install: missing $p"; done; ok
+[ -e .github/ISSUE_TEMPLATE/task.yml ] && bad "install: the retired issue form was written" || ok
 [ ! -e tests ] && [ ! -e install.sh ] && [ ! -e CHANGELOG.md ] && ok || bad "install: repo-only files leaked"
 [ ! -e .github/workflows/build.yml ] && ok || bad "install: adopt writes no build workflow"
 # a real CLAUDE.md becomes AGENTS.md with the pointer prepended
@@ -174,9 +175,51 @@ out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || 
 (cd "$tmp/c" && [ "$(cat .t-workflow/VERSION)" = v2 ] && grep -q '^check="mine"' .t-workflow/config && grep -q '^mine$' AGENTS.md && ! grep -q 'hand edit' .claude/skills/t-open/SKILL.md) && ok || bad "install: update replaced owned files and kept consumer ones"
 (cd "$tmp/c" && grep -q '^exempt=""' .t-workflow/config && grep -B1 '^exempt=""' .t-workflow/config | head -1 | grep -q '^# Branch globs') && has "$out" 'config: added exempt' && ok || bad "install: update appends a missing config key with its comment"
 [ "$(grep -c '^check=' "$tmp/c/.t-workflow/config")" = 1 ] && ok || bad "install: update does not duplicate present keys"
-(cd "$tmp/c" && sed -i.bak 's|^# Build/test command the agent runs locally.*|# Build/test command, run as check 1 (empty = no check 1 yet).|; /^# CI does not run it/d; s|^# Branch globs exempt.*|# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.|' .t-workflow/config && rm -f .t-workflow/config.bak && git add -A && git commit -qm "old comments")
+(cd "$tmp/c" && sed -i.bak 's|^# Build/test command the agent runs locally.*|# Build/test command, run as check 1 (empty = no check 1 yet).|; /^# CI does not run it/d; s|^# Branch globs exempt.*|# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.|; s|^# Parsed by .t-workflow/scripts/\*.*|# Shell syntax: key="value". Read by .t-workflow/scripts/*.|; /^# inside the value, no variables/d' .t-workflow/config && rm -f .t-workflow/config.bak && git add -A && git commit -qm "old comments")
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update (comments)"
 (cd "$tmp/c" && grep -q '^# CI does not run it' .t-workflow/config && ! grep -q 'Check 1 still runs' .t-workflow/config && grep -q '^check="mine"' .t-workflow/config) && ok || bad "install: update rewrites the old default comments and keeps the values: $(grep -E '^#|^check=' "$tmp/c/.t-workflow/config" | head -8)"
+(cd "$tmp/c" && grep -q '^# Parsed by .t-workflow/scripts/\*, never executed' .t-workflow/config && grep -q '^# inside the value, no variables' .t-workflow/config && ! grep -q '^# Shell syntax' .t-workflow/config) && ok || bad "install: update rewrites the old 'shell syntax' header to the parsed-not-executed one: $(head -3 "$tmp/c/.t-workflow/config")"
+# a retired owned file: removed on update only when it is byte-for-byte a copy this repository shipped
+mkdir -p "$tmp/c/.github/ISSUE_TEMPLATE" && cat > "$tmp/c/.github/ISSUE_TEMPLATE/task.yml" <<'FORM'
+name: Task
+description: A single piece of work for the t-workflow pipeline.
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should change and why.
+    validations:
+      required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: Observable criteria that say the work is finished.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Paths the work may touch.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: What this task explicitly does not do.
+    validations:
+      required: true
+FORM
+[ "$(git hash-object "$tmp/c/.github/ISSUE_TEMPLATE/task.yml")" = b774760dd3dad869983e021d21693afecd191646 ] && ok || bad "install: the fixture is not the form the trunk carried before #34 (blob $(git hash-object "$tmp/c/.github/ISSUE_TEMPLATE/task.yml"))"
+(cd "$tmp/c" && git add -A && git commit -qm "the old form")
+out=$(bash "$ROOT/install.sh" v4 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update (retired form): $out"
+[ ! -e "$tmp/c/.github/ISSUE_TEMPLATE/task.yml" ] && has "$out" 'remove: .github/ISSUE_TEMPLATE/task.yml (retired' && ok || bad "install: update removes the release's own copy of a retired file: $out"
+mkdir -p "$tmp/c/.github/ISSUE_TEMPLATE" && printf 'name: Task\nbody: mine\n' > "$tmp/c/.github/ISSUE_TEMPLATE/task.yml" && (cd "$tmp/c" && git add -A && git commit -qm "my own form")
+out=$(bash "$ROOT/install.sh" v5 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update (consumer form): $out"
+[ "$(cat "$tmp/c/.github/ISSUE_TEMPLATE/task.yml")" = "$(printf 'name: Task\nbody: mine')" ] && has "$out" 'remove: (none)' && has "$out" 'stays yours' && ok || bad "install: update leaves a consumer's own file at a retired path: $out"
 (cd "$tmp/c" && grep -B1 '^# Branch globs' .t-workflow/config | head -1 | grep -q '^$') && ok || bad "install: appended key is separated by a blank line even when the config lacked a trailing newline"
 # a dirty tree refuses in every mode, even with --no-pr; the plan prints first
 mkdir -p "$tmp/dirty" && (cd "$tmp/dirty" && git init -q -b main && git commit -q --allow-empty -m i && echo dirty > untracked.txt)
@@ -261,7 +304,7 @@ git add -A && git commit -qm old
 out=$(bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/g" --no-pr 2>&1) || bad "replace (no manifest): $out"
 has "$out" 'mode: replace' && has "$out" "the old t-workflow's shape" && ok || bad "replace (no manifest): detected by shape, and says so: $out"
 for p in CONSTITUTION.md docs/workflow.md docs/tasks/README.md migrations docs/adr/001-old.md docs/adapters docs/architecture/manifest.md .github/workflows/ci.yml .github/workflows/review-gate.yml .github/ISSUE_TEMPLATE/initiative.yml .github/ISSUE_TEMPLATE/config.yml .claude/skills/t-config .t-workflow/scripts/protected-paths.sh .t-workflow/required-checks.local; do [ -e "$p" ] && bad "replace (no manifest): old file survived: $p"; done; ok
-grep -q '^name: Task' .github/ISSUE_TEMPLATE/task.yml && ! grep -q '^old$' .github/ISSUE_TEMPLATE/task.yml && ok || bad "replace (no manifest): the old task form is replaced by the owned one"
+[ -e .github/ISSUE_TEMPLATE/task.yml ] && bad "replace (no manifest): the old task form survived" || ok
 for p in .claude/skills/l-mine/SKILL.md .github/workflows/deploy.yml .github/ISSUE_TEMPLATE/bug.yml docs/adr/100-mine.md docs/architecture/mine.md docs/own/notes.md docs/tasks/000000/12-x.md; do [ -e "$p" ] || bad "replace (no manifest): consumer file lost: $p"; done; ok
 [ -f .claude/skills/t-work/SKILL.md ] && grep -q '^name: t-work' .claude/skills/t-work/SKILL.md && ok || bad "replace (no manifest): old t-work replaced by the new one"
 grep -q '^check=""' .t-workflow/config && grep -q '^reviewer_model=""' .t-workflow/config && ok || bad "replace (no manifest): placeholder slots leave config at defaults: $(grep -vE '^#|^$' .t-workflow/config | tr '\n' ' ')"
@@ -287,9 +330,14 @@ printf '%s\n' '# a comment' 'check="tests/test.sh"' 'protected="db/migrate/*"' \
   'check="x"; touch "$tmp/cfg-PWNED"' 'exempt="a" # trailing junk' 'bogus="y"' \
   'reviewer_model="m"; touch "$tmp/cfg-PWNED2"' > "$tmp/cfg/.t-workflow/config"
 # shellcheck disable=SC2154 # check, protected, exempt, docs, reviewer_model: set by lib.sh, sourced dynamically above
-cfgvals=$(cd "$tmp/cfg" && . "$S/lib.sh" && printf 'check=%s protected=%s exempt=%s docs=%s reviewer=%s' "$check" "$protected" "$exempt" "$docs" "$reviewer_model")
+cfgvals=$(cd "$tmp/cfg" && . "$S/lib.sh" 2>/dev/null && printf 'check=%s protected=%s exempt=%s docs=%s reviewer=%s' "$check" "$protected" "$exempt" "$docs" "$reviewer_model")
 [ "$cfgvals" = "check=tests/test.sh protected=db/migrate/* exempt= docs= reviewer=" ] && ok || bad "config: plain key=value lines parse, the rest is ignored: $cfgvals"
 [ ! -e "$tmp/cfg-PWNED" ] && [ ! -e "$tmp/cfg-PWNED2" ] && ok || bad "config: a shell payload in the config never runs"
+# an assignment the parser does not accept is said on stderr, once per line, with the documented empty value
+printf '%s\n' '# a comment' "check='tests/test.sh'" '' 'docs="$HOME/site"' 'protected="ok/*"' > "$tmp/cfg/.t-workflow/config"
+cfgerr=$(cd "$tmp/cfg" && { . "$S/lib.sh" && printf 'check=[%s] docs=[%s] protected=[%s]\n' "$check" "$docs" "$protected"; } 2>&1)
+has "$cfgerr" "^config: line 2 ignored: check='tests/test.sh'$" && has "$cfgerr" '^config: line 4 ignored: docs="\$HOME/site"$' && has "$cfgerr" '^check=\[\] docs=\[\] protected=\[ok/\*\]$' && [ "$(printf '%s\n' "$cfgerr" | grep -c ignored)" = 2 ] && ok || bad "config: an ignored assignment is reported once, comments and blanks are not: $cfgerr"
+cfgerr=$(cd "$tmp/b" && . "$S/lib.sh" 2>&1); [ -z "$cfgerr" ] && ok || bad "config: the installed default config reports nothing: $cfgerr"
 printf 'protected="zz-only/*"\n' > "$tmp/cfg-base"
 expect_exit 0 "config: TW_CONFIG_FILE redirects the read (the CI merged copy)" env TW_CONFIG_FILE="$tmp/cfg-base" "$S/protected.sh" zz-only/a.txt
 expect_exit 1 "config: without it the working tree's own values apply" bash -c "cd $tmp/cfg && $S/protected.sh zz-only/a.txt"
@@ -425,6 +473,10 @@ out=$(RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' RERU
 [ "$rc" -eq 1 ] && has "$out" 'could not re-run' && ok || bad "rerun-ci: reports a failed re-run (exit $rc): $out"
 out=$(RUNS='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot list runs' && ok || bad "rerun-ci: a failed run list is an error, not 'no run' (exit $rc): $out"
 out=$(PRVIEW='' rr); rc=$?; [ "$rc" -eq 2 ] && has "$out" 'cannot read PR' && ok || bad "rerun-ci: unreadable PR (exit $rc): $out"
+# a flag-shaped argument gets gh's help text and exit 0: no head, and an empty --commit would list the whole repository's runs
+: > "$RERUNS"
+out=$(PRVIEW='{"isDraft":false}' RUNS='[{"databaseId":9,"status":"completed","conclusion":"failure"}]' rr); rc=$?
+[ "$rc" -eq 2 ] && has "$out" 'no head commit' && [ ! -s "$RERUNS" ] && ok || bad "rerun-ci: an empty head is an error and re-runs nothing (exit $rc): $out"
 grep -q 'pull_request_review' "$ROOT/.github/workflows/t-workflow.yml" && bad "workflow: still triggers on reviews" || ok
 
 echo "# issue.sh children / parent / blocking (stubbed gh, GitHub's real shape)"
@@ -567,7 +619,9 @@ export ISSUES='{
   "35": {"number":35,"title":"Integration","state":"OPEN","labels":[],"body":"## Goal\nx\n","parent":null},
   "32": {"number":32,"title":"B","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/b.txt`\n","parent":{"number":30}},
   "33": {"number":33,"title":"C","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/c.txt`\n","parent":null},
-  "34": {"number":34,"title":"D","state":"CLOSED","labels":[],"body":"## Goal\nx\n","parent":{"number":30}}}'
+  "34": {"number":34,"title":"D","state":"CLOSED","labels":[],"body":"## Goal\nx\n","parent":{"number":30}},
+  "36": {"number":36,"title":"Unlabelled","state":"OPEN","labels":[],"body":"## Goal\nx\n","parent":null},
+  "37": {"number":37,"title":"F","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/f.txt`\n","parent":{"number":36}}}'
 export BLOCKERS='{"32":[{"number":31,"state":"OPEN","stateReason":null,"title":"A"}]}'
 export CHILDREN='{}' PRS='[]'
 g() { PATH="$tmp/gh5:$PATH" "$S/gate.sh" "$@" 2>&1; }
@@ -576,6 +630,10 @@ out=$(g work 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: #30 is a parent
 out=$(g work 31); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: child of #30$' && has "$out" '^base: wip/30-integration (integration branch of #30, created from origin/main)$' && has "$out" 'create wip/31-a from origin/wip/30-integration' && ok || bad "gate work: a child's base is the integration branch, created on first use (exit $rc): $out"
 git ls-remote --heads "$tmp/i-origin" | grep -q 'refs/heads/wip/30-integration$' && [ "$(git rev-parse origin/wip/30-integration)" = "$(git rev-parse origin/main)" ] && ok || bad "gate work: the integration branch exists on origin at the trunk's commit"
 out=$(g work 31); has "$out" '^base: wip/30-integration (integration branch of #30)$' && ok || bad "gate work: an existing integration branch is reused, not recreated: $out"
+# a child of a parent without the label: ci.sh and the ship gate would never treat the branch as a parent's, so no branch yet
+out=$(g work 37); rc=$?
+[ "$rc" -eq 1 ] && has "$out" '^kind: child of #36$' && has "$out" "BLOCKED: parent #36 has no 'initiative' label.*issue.sh ensure-label initiative && gh issue edit 36 --add-label initiative" && ok || bad "gate work: a child of an unlabelled parent is blocked with the label command named (exit $rc): $out"
+git ls-remote --heads "$tmp/i-origin" | grep -q 'wip/36-integration' && bad "gate work: the integration branch was created for an unlabelled parent" || ok
 out=$(g work 32); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: a blocker is not closed as completed' && ok || bad "gate work: a child blocked by an open sibling (exit $rc): $out"
 export BLOCKERS='{"32":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"}]}'
 out=$(g work 32); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^base: wip/30-integration' && ok || bad "gate work: the sibling closed as completed unblocks (exit $rc): $out"
@@ -600,6 +658,11 @@ export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED",
 out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: parent$' && has "$out" '^record: docs/tasks/32-b.md$' && ! has "$out" 'Plan' && ok || bad "gate ship: every child closed as completed with its record → the parent may ship, no plan asked (exit $rc): $out"
 pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","src/a.txt","src/b.txt"]'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: completed child #32 has no record' && ok || bad "gate ship: a completed child whose record is not in the diff blocks (exit $rc): $out"
+# a child that merged into the trunk itself, under a release without integration branches: its record is on the trunk, not in the diff
+mkdir -p docs/tasks && mkrec 36 E e && git add -A && git commit -qm "[36] E (#99)" && git push -q origin main && git fetch -q origin
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":36,"state":"CLOSED","stateReason":"COMPLETED","title":"E"}]}'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^record: docs/tasks/36-e.md (already on main' && ok || bad "gate ship: a completed child whose record is already on the trunk ships (exit $rc): $out"
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":34,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"D"}]}'
 pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","docs/tasks/34-d.md","src/a.txt","src/b.txt"]'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: cancelled child #34 is still on wip/30-integration' && ok || bad "gate ship: a cancelled child still on the branch blocks (exit $rc): $out"
@@ -623,6 +686,12 @@ out=$(PR_REF=wip/31-a ci5 wip/30-integration wip/31-a 101 "[31] A"); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'policy: exempt/protected/docs from origin/wip/30-integration' && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a child's PR is judged by today's rules from its base, the integration branch (exit $rc): $out"
 out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: record docs/tasks/32-b.md' && has "$out" 'OK: title starts with \[30\]' && ! has "$out" 'no record docs/tasks/30-' && ok || bad "ci: the initiative's PR is judged by its children's records, not its own (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":36,"state":"CLOSED","stateReason":"COMPLETED","title":"E"}]}'
+out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'OK: record docs/tasks/36-e.md of completed child #36 is already on main' && ok || bad "ci: a completed child whose record is already on the trunk passes (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":38,"state":"CLOSED","stateReason":"COMPLETED","title":"G"}]}'
+out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 1 ] && has "$out" 'FAIL: completed child #38 has no record docs/tasks/38-<slug>.md in this PR or on main' && ok || bad "ci: a completed child with a record nowhere still fails (exit $rc): $out"
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"OPEN","stateReason":null,"title":"B"}]}'
 out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
 [ "$rc" -eq 1 ] && has "$out" 'FAIL: child #32 (B) is still open' && ok || bad "ci: an open child fails the initiative's PR (exit $rc): $out"

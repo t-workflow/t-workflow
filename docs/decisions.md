@@ -3,6 +3,26 @@
 One short entry per decision this repository made about itself. Newest first. Not
 shipped to consumers.
 
+## 2026-09-10 — A child's record on the trunk counts for its parent
+
+A partly shipped initiative from before integration branches has children that merged
+into the trunk one at a time. The parent's gate and CI want every completed child's
+record in the parent PR's diff; such a child's is on the trunk instead, and the parent
+could never ship. Both now accept a completed child whose record already sits at
+`docs/tasks/<child>-*.md` on the trunk, and say so. The acceptance is narrow — that
+exact path on the trunk, nothing else — so a child that merged nowhere still blocks.
+
+## 2026-09-10 — The issue form goes; `section()` does not learn `###`
+
+GitHub issue forms emit every field as a `###` heading and the scripts read `##`, so
+a form-filed issue was never read. Teaching `section()` both levels would make every
+reader tolerate two shapes for one field forever; the form is the thing nobody needed.
+It leaves the owned set, and the updater removes a consumer's copy only when its bytes
+are one of the two this repository's trunk ever carried (no tag had it; a consumer
+has one only from an install off the trunk). A `$` in a config value is refused the same way an inner
+quote is: the value was never expanded, so a literal `$HOME` was never what anyone
+meant, and an ignored line is now said on stderr rather than read as empty in silence.
+
 ## 2026-09-11 — The contract carries rules, not rationale
 
 The CI paragraph in `.t-workflow/AGENTS.md` had grown to about 180 words of threat

@@ -15,22 +15,25 @@ die() { echo "ERROR: $*" >&2; exit 2; }
 
 # Config, with defaults. Consumer-owned file; keys are documented there. The file is
 # parsed as plain key="value" lines and never executed; anything else on a line is
-# ignored. TW_CONFIG_FILE points the parse at another file (ci.sh exports a merged
-# base-policy copy so the gate's children judge by the same values).
+# ignored, and a line shaped like an assignment that the parser does not accept (a
+# single-quoted value, a quote inside the value, a $VAR) is said once on stderr, so an
+# empty value is never silent. TW_CONFIG_FILE points the parse at another file (ci.sh
+# exports a merged base-policy copy so the gate's children judge by the same values).
 check=""; protected=""; docs=""; exempt=""; reviewer_model=""
 load_config() {
   check=""; protected=""; docs=""; exempt=""; reviewer_model=""
-  local cfg="${1:-}" line kv
+  local cfg="${1:-}" line kv n=0
   [ -n "$cfg" ] && [ -f "$cfg" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%$'\r'}"
-    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model)="([^"]*)"[[:space:]]*$/\1=\2/p')
+    n=$((n + 1)); line="${line%$'\r'}"
+    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model)="([^"$]*)"[[:space:]]*$/\1=\2/p')
     case "$kv" in
       check=*) check="${kv#check=}" ;;
       protected=*) protected="${kv#protected=}" ;;
       docs=*) docs="${kv#docs=}" ;;
       exempt=*) exempt="${kv#exempt=}" ;;
       reviewer_model=*) reviewer_model="${kv#reviewer_model=}" ;;
+      "") [[ "$line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*= ]] && echo "config: line $n ignored: $line" >&2 ;;
     esac
   done < "$cfg"
 }

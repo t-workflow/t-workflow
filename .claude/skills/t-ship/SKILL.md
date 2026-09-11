@@ -19,7 +19,7 @@ Read `.t-workflow/AGENTS.md`.
    question, because the initiative's own PR is where the human decides.
 2. `gh pr ready <pr>`. CI starts here (drafts skip it). A PR that was already ready may
    carry a run that went red before its review existed: `.t-workflow/scripts/rerun-ci.sh <pr>`
-   re-runs it (a no-op unless a completed run at the head is red). Then
+   re-runs the red runs (a no-op unless a completed run at the head is red). Then
    `gh pr checks <pr> --watch`.
    No CI configured → say so and continue. Red → `gh pr ready <pr> --undo`, report
    which check failed, name `/t-work <id>`. Stop.

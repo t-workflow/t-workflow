@@ -22,9 +22,10 @@ three commands — mark that PR ready, watch its checks, squash-merge it — the
    A cancelled blocker is abandoned, never satisfied.
 3. Comment the reason and every decision on the issue (`gh issue comment <id>`), then
    `gh issue close <id> --reason "not planned"`.
-4. Close the PR if one exists (`gh pr close <pr> --delete-branch`); otherwise delete
-   the remote branch (`git push origin --delete wip/<id>-<slug>`). Leave local
-   branches and worktrees alone. A parent: its integration PR closes and
+4. Close the PR if one is open (`gh pr close <pr> --delete-branch`); otherwise delete
+   the remote branch (`git push origin --delete wip/<id>-<slug>`). A merged PR is left
+   alone: step 5's revert is its undoing. Leave local branches and worktrees alone. A
+   parent: its integration PR closes and
    `wip/<id>-integration` is deleted the same way.
 5. A child already merged into its parent's integration branch (its PR is merged, its
    record is on `wip/<parent>-integration`) is reverted there, so the initiative stays
