@@ -41,10 +41,15 @@ it. Decide the isolation line first:
    ran that same command at that sha (read its workflow to be sure — t-workflow's own
    job runs the gates, never the build); anything less → run it yourself. A claimed
    documentation-only skip is verified by running `docs-only.sh` on `pr.files`, never
-   reused.
-4. Severity. Blocker or high, never lower: a failed check, an unauthorized removal, a
-   path outside scope, a protected path with no `## Plan`. Only blocker and high hold
-   the verdict; medium and low are posted for the human to decide.
+   reused. A claim about what an external service accepts — an API's request shape, a
+   permission, a branch rule — is settled by a read-only call when one can settle it,
+   never by the tests' stubs.
+4. Severity is what a finding does in the pipeline: a task or initiative that can no
+   longer reach the trunk, a merge that should not happen, or a gate silently skipped
+   is high wherever it lives, a skill sentence included. So, never lower than high: a
+   failed check, an unauthorized removal, a path outside scope, a protected path with
+   no `## Plan`. Only blocker and high hold the verdict; medium and low are posted for
+   the human to decide.
 5. Post with `gh pr review <pr> --comment --body-file <file>`:
 
 ```markdown
