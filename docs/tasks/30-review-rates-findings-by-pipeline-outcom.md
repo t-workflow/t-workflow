@@ -20,4 +20,4 @@ Two findings in the cold reviews of #26 and #28 reached the merge question with 
 - Five lines added to the skill in total (69 → 74).
 
 ## Deviations / notes
-- none
+- Fix pass after the cold review, its Low wording notes 1, 4, and 5 taken: the category list now follows the outcome test as "So, never lower than high:", "when one can" has its object, and the #26 record says "recorded by #30". Its note 2 (nothing separates blocker from high) predates this task and is proposed as its own issue; note 3 is the line the human check covers and stays.
