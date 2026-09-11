@@ -24,4 +24,5 @@ sequence above. Each child is its own PR and its own merge gate; after the human
 answer, continue with the next child whose blockers are now satisfied. A child that
 fails its bounded retry is reported and skipped, never cancelled.
 
-Report at every stop: what was done, what is waiting, what the human is being asked.
+Report at every stop: what was done, what is waiting, and ask per the Communication
+rule in `.t-workflow/AGENTS.md`.

@@ -11,9 +11,9 @@ neighbour's disposition land on the issue before anything is destroyed.
 1. Read the issue (`.t-workflow/scripts/issue.sh view <id>`), what it blocks
    (`issue.sh blocking <id>`), its children (`issue.sh children <id>`), and any issue
    whose body ends `Split from: #<id>` (`gh issue list --search "Split from: #<id>"`).
-2. For each neighbour, ask the human for a decision: **proceed** (remove the
-   dependency: `gh issue edit <n> --remove-blocked-by <id>`), **cancel too** (run this
-   skill on it), or **leave** (it stays blocked by a cancelled issue and shows as such).
+2. For each neighbour, ask one question with options `proceed` (remove the
+   dependency: `gh issue edit <n> --remove-blocked-by <id>`), `cancel too` (run this
+   skill on it), or `leave` (it stays blocked by a cancelled issue and shows as such).
    A cancelled blocker is abandoned, never satisfied.
 3. Comment the reason and every decision on the issue (`gh issue comment <id>`), then
    `gh issue close <id> --reason "not planned"`.
