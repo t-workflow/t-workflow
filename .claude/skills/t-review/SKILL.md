@@ -23,7 +23,10 @@ it. Decide the isolation line first:
 
 1. Read `.t-workflow/AGENTS.md`, then `.t-workflow/scripts/snapshot.sh review <id>`:
    the issue, its plan, the PR (files, reviews, head sha, its `## Checks run`), the
-   full diff, and local state. `local.clean == false`, or `local.head` differing from
+   full diff, and local state. For an initiative (`children` non-empty, the PR from
+   `wip/<id>-integration` to the trunk) the plans and records to check against are
+   the children's, from `children[].plan` and `children[].record`; the parent has none
+   of its own, and its Human checks are the union of theirs. `local.clean == false`, or `local.head` differing from
    `pr.headRefOid` while on the task branch, is itself a finding: the PR carries only
    what was pushed.
 2. Check **scope** (every path within Allowed paths or Scope), **record honesty** (does

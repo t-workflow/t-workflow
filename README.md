@@ -17,7 +17,9 @@ curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/main/install.
 That installs the newest tag; to pin one, append it:
 `… | bash -s -- <tag>`. It opens an issue, a branch, and a pull request that adds
 t-workflow, and sets branch protection: a repository that already has protection keeps
-every rule it had, and only the required-checks list changes to include `t-workflow`. Review the PR — in particular the detected check command in
+every rule it had, and only the required-checks list changes to include `t-workflow`;
+a second rule protects every initiative's integration branch (`wip/*-integration`) the
+same way, deletions allowed. Review the PR — in particular the detected check command in
 `.t-workflow/config` — and merge it. The workflow is in force from then on.
 
 Options: `--check "<cmd>"` to name the build/test command, `--no-protect` to leave
@@ -64,9 +66,13 @@ files are MIT-licensed copies you may keep under your own license.
 | `/t-review` | Cold, read-only review with a readiness verdict. Required before shipping a protected diff. |
 | `/t-ship` | Human-confirmed squash merge. |
 | `/t-cancel` | Abandon a task with the reason and every dependent decided. |
-| `/t-drive` | Chains the stages for a task, or a parent's children in order, stopping at each merge gate. |
+| `/t-drive` | Chains the stages for a task, or a parent's children in order, stopping at the parent's merge gate. |
 | `/t-status` | What is in flight. |
 | `/t-update` | Newer t-workflow release, as an ordinary task. |
+
+An initiative (a parent issue with children) lands as one change: each child's PR
+merges mechanically into `wip/<parent>-integration`, and the human confirms once, on
+the parent's PR from that branch to the trunk.
 
 The rules are in [`.t-workflow/AGENTS.md`](.t-workflow/AGENTS.md). Protected paths
 (the workflow's own files, CI, the instruction files, plus whatever `config` adds) need

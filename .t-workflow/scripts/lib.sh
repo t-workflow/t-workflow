@@ -114,6 +114,18 @@ open_blockers() {
   return 0
 }
 
+# children_json <id>: [{number,title,state,stateReason}] — the issue's sub-issues, with
+# stateReason so a child closed as completed is told from one cancelled.
+children_json() {
+  local nwo; nwo=$(repo_nwo)
+  gh api graphql -f query='query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){issue(number:$num){subIssues(first:100){nodes{number state stateReason title}}}}}' \
+    -F o="${nwo%/*}" -F n="${nwo#*/}" -F num="$1" --jq '.data.repository.issue.subIssues.nodes'
+}
+
+# integration_branch <parent-id>: where an initiative's children land. The parent
+# relation is read from the child's own issue (its parent field), never from a label.
+integration_branch() { echo "wip/$1-integration"; }
+
 # review_verdict <reviews-json> <head-committed-at>: reads the latest review and prints
 #   verdict: ready|not-ready|none   isolation: <line or none>   fresh: yes|no
 # followed by the review's "## Pending human checks" section, then its medium and low
