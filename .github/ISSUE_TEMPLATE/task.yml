@@ -20,12 +20,8 @@ body:
     attributes:
       label: Scope
       description: Paths the work may touch.
-    validations:
-      required: true
   - type: textarea
     id: non-goals
     attributes:
       label: Non-goals
       description: What this task explicitly does not do.
-    validations:
-      required: true
