@@ -321,8 +321,22 @@ has "$out" 'policy: exempt/protected/docs from origin/main' && ok || bad "ci: sa
 # ... but the base can: exempt the branch there and the gate stands down
 git checkout -q main && sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config && git add -A && git commit -qm "exempt feature branches" && git push -q origin main && git fetch -q origin && git checkout -q wip/5-thing
 out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch (policy from the base)"
+# PR_REF: the checkout can stay on main throughout; the PR is only ever read through
+# the ref (this is what the workflow does — checkout stays on the base branch, PR_REF
+# points at a fetched commit — instead of checking the PR out and running from it)
+git checkout -q main
+out=$(PR_REF=wip/5-thing ci wip/5-thing "[5] Thing")
+has "$out" 'OK: record docs/tasks/5-thing.md' && ok || bad "ci: PR_REF reads the record through the ref: $out"
+has "$out" 'OK: title starts with \[5\]' && ok || bad "ci: PR_REF still checks the PR's title: $out"
+[ ! -e docs/tasks/5-thing.md ] && ok || bad "ci: PR_REF never checks the PR's files out onto disk"
+git checkout -q wip/5-thing
 sedi 's|^check=""|check="false"|' .t-workflow/config
 if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
+
+echo "# t-workflow.yml (trigger)"
+wf="$ROOT/.github/workflows/t-workflow.yml"
+grep -qE '^\s*pull_request_target:' "$wf" && ok || bad "workflow: must trigger on pull_request_target, not pull_request, so GitHub reads it from the base branch"
+grep -qE '^\s*pull_request:' "$wf" && bad "workflow: pull_request trigger present — a PR could rewrite this file's own YAML on that trigger" || ok
 
 echo "# rerun-ci.sh (stubbed gh)"
 mkdir -p "$tmp/gh2"; cat > "$tmp/gh2/gh" <<'STUB'
