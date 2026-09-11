@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Re-run the t-workflow CI run for a PR's head commit once a cold review exists: the
+# Re-run the t-workflow CI runs for a PR's head commit once a cold review exists: a
 # run that fired on the push was red only because no review existed yet, and
-# re-running it is what turns it green — one run per commit, nothing for a human to do.
+# re-running it is what turns it green — nothing for a human to do. One run per
+# commit and event; a PR that touches the workflow file has two.
 #   rerun-ci.sh <pr>
 #   exit 0 = re-run started, or nothing to do (said why); 1 = the re-run could not be
 #   started; 2 = the PR or its runs could not be read.
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
-pr="${1:-}"; [ -n "$pr" ] || { sed -n '2,7p' "$0" | sed 's/^# //'; exit 2; }
+pr="${1:-}"; [ -n "$pr" ] || { sed -n '2,8p' "$0" | sed 's/^# //'; exit 2; }
 v=$(gh pr view "$pr" --json headRefOid,isDraft) || die "cannot read PR #$pr"
 head=$(printf '%s' "$v" | jq -r .headRefOid)
 if [ "$(printf '%s' "$v" | jq -r .isDraft)" = true ]; then

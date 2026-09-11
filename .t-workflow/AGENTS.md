@@ -63,9 +63,9 @@ globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executa
 2. `git diff <trunk>...HEAD`, read against the task's scope.
 
 CI reads this workflow file and every gate script it runs — record, title, plan,
-review, and blocker rules only — from the pull request's base branch, never its own
-copy: the trigger is `pull_request_target`, which GitHub reads from the base branch,
-and the scripts it calls are fetched from there too. A child of an initiative is
+review, and blocker rules only — from the pull request's base branch, not from the
+pull request: the trigger is `pull_request_target`, which GitHub reads from the base
+branch, and the scripts it calls are fetched from there too. A child of an initiative is
 therefore judged by the integration branch's copy of the scripts and policy, and the
 initiative's PR to the trunk by the trunk's copy, on the combined diff. The guarantee
 that a pull request cannot rewrite its own enforcement holds at the trunk; the gate
