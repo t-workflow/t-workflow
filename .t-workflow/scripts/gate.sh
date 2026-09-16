@@ -126,7 +126,7 @@ ship)
   # never by a child PR, whose squash keeps the files and drops the merge parent, so
   # the next gate replays the same conflict. Named before the PR is looked at, so the
   # merge lands before the integration PR opens and the review runs on it.
-  merge_trunk="git fetch origin && git checkout $want_head && git merge origin/$trunk && git push origin $want_head"
+  merge_trunk="git fetch origin && git checkout -B $want_head origin/$want_head && git merge origin/$trunk && git push origin $want_head"
   if [ "$kind" = parent ] && git show-ref -q --verify "refs/remotes/origin/$want_head" \
      && ! git merge-base --is-ancestor "origin/$trunk" "origin/$want_head" 2>/dev/null; then
     echo "trunk-behind: $(git rev-list --count "origin/$want_head..origin/$trunk") commit(s) of $trunk not on $want_head"
@@ -161,7 +161,7 @@ ship)
     # Trunk commits on the child that its base lacks: a merge of the trunk done here
     # would be squashed away; it belongs on the integration branch itself.
     carried=$(comm -12 <(git rev-list "origin/$want_base..origin/$branch" | sort) <(git rev-list "origin/$want_base..origin/$trunk" | sort) | grep -c . || true)
-    [ "$carried" -eq 0 ] || block "this branch carries $carried trunk commit(s); merge origin/$trunk into $want_base directly instead of through a child: git fetch origin && git checkout $want_base && git merge origin/$trunk && git push origin $want_base"
+    [ "$carried" -eq 0 ] || block "this branch carries $carried trunk commit(s); merge origin/$trunk into $want_base directly instead of through a child: git fetch origin && git checkout -B $want_base origin/$want_base && git merge origin/$trunk && git push origin $want_base"
   fi
 
   # check_record <id> <path>: the record as it is at the PR head, through record.sh.

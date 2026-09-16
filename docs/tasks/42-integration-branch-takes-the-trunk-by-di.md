@@ -28,8 +28,11 @@ The fix, in three parts:
 
 ## Deviations / notes
 - `shellcheck` is not installed here; that check runs in CI on the PR.
+- Review fix (High): the named merge now checks out the integration branch fresh from origin (`git checkout -B`), since the local branch is stale once children merged on GitHub; the test runs the merge from a stale local branch.
 - Test fixture note: the existing fixture pushes a child's record to `main` after the integration branch exists, which is exactly the "trunk moved" case; the new tests use it and then run the named merge so the older assertions still hold.
 
 ## Agents
 - plan: claude-code 2.1.273 / claude-fable-5-1
 - work: claude-code 2.1.273 / claude-fable-5-1
+- review: claude-code 2.1.273 / claude-fable-5-1 (subagent)
+- work (fix): claude-code 2.1.273 / claude-fable-5-1
