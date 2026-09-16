@@ -149,3 +149,12 @@ gates are not in force on that PR. An update PR is a protected diff like any oth
 `tests/test.sh` prints the consumer footprint. A hard limit would be a test that
 breaks for reasons nobody cares about at the time; the number in the log is enough to
 notice drift.
+
+## 2026-09-15 — An integration branch takes the trunk by direct merge
+
+A squashed child PR keeps the resolved files but drops the merge parent, so the next
+gate replays the same conflict (seen twice on one initiative). The ship gate names the
+merge whenever the trunk has moved, not only on conflict, so the merge lands before the
+integration PR is reviewed and the review does not go stale. The trunk itself is
+unchanged: PR-only. The branch rule's required check means a non-admin push is refused
+by GitHub; admins pass. Left as is until it bites someone.

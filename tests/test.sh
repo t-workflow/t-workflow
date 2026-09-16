@@ -728,7 +728,32 @@ out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: completed child
 mkdir -p docs/tasks && mkrec 36 E e && git add -A && git commit -qm "[36] E (#99)" && git push -q origin main && git fetch -q origin
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":36,"state":"CLOSED","stateReason":"COMPLETED","title":"E"}]}'
 pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
-out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^record: docs/tasks/36-e.md (already on main' && ok || bad "gate ship: a completed child whose record is already on the trunk ships (exit $rc): $out"
+# the trunk moved: the integration branch takes it by a merge pushed to it directly, named by the gate — never by a child PR
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" '^trunk-behind: 1 commit(s) of main not on wip/30-integration$' && has "$out" 'BLOCKED: wip/30-integration does not carry the current main — merge it directly.*: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ! has "$out" 'child task' && ok || bad "gate ship: a parent whose integration branch lacks the trunk names the direct merge (exit $rc): $out"
+# a child PR carrying that merge instead is refused: its squash would drop the merge parent
+git checkout -q -b wip/32-b2 origin/wip/30-integration && git merge -q origin/main && git push -q -u origin wip/32-b2
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "OPEN"'); export ISSUES
+pr 108 '[32] B' OPEN _ _ wip/32-b2 wip/30-integration '["docs/tasks/32-b.md","docs/tasks/36-e.md"]'
+out=$(g ship 32); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: this branch carries 1 trunk commit(s); merge origin/main into wip/30-integration directly instead of through a child: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ok || bad "gate ship: a child carrying trunk commits is refused (exit $rc): $out"
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "CLOSED"'); export ISSUES
+# a conflicting trunk names the same commands
+keep=$(git rev-parse origin/main)
+git checkout -q -b tmp-clash origin/main && echo clash > base.txt && git commit -qam "[38] clash" && git push -q origin tmp-clash:main && git fetch -q origin || bad "gate ship fixture: clash on main"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+PRS=$(printf '%s' "$PRS" | jq -c '.[0].mergeable = "CONFLICTING"'); export PRS
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: the integration branch conflicts with main — merge it directly, resolve, push: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ! has "$out" 'child task' && ok || bad "gate ship: a conflicting integration branch names the direct merge, never a child task (exit $rc): $out"
+git push -q -f origin "$keep:main" && git fetch -q origin && git checkout -q wip/30-integration && git branch -q -D tmp-clash
+# the merge the gate names, run as /t-ship does: the block clears and the child's clean PR is fine
+git reset -q --hard origin/wip/30-integration~1 && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/wip/30-integration)" ] || bad "gate ship fixture: stale local integration branch"   # children merged on GitHub since
+(git fetch -q origin && git checkout -q -B wip/30-integration origin/wip/30-integration && git merge -q origin/main && git push -q origin wip/30-integration) && ok || bad "gate ship: the named merge from a stale local integration branch"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^record: docs/tasks/36-e.md (already on main' && ! has "$out" 'trunk-behind' && ok || bad "gate ship: a completed child whose record is already on the trunk ships (exit $rc): $out"
+git checkout -q -B wip/32-b2 origin/wip/30-integration && echo b2 > src/b.txt && git commit -qam b2 && git push -q -f origin wip/32-b2
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "OPEN"'); export ISSUES
+pr 108 '[32] B' OPEN _ _ wip/32-b2 wip/30-integration '["docs/tasks/32-b.md","src/b.txt"]'
+out=$(g ship 32); rc=$?; [ "$rc" -eq 0 ] && ok || bad "gate ship: a child on an integration branch that took the trunk carries no trunk commits (exit $rc): $out"
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "CLOSED"'); export ISSUES
+git checkout -q main && git branch -q -D wip/32-b2 && git push -q origin --delete wip/32-b2
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":34,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"D"}]}'
 pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","docs/tasks/34-d.md","src/a.txt","src/b.txt"]'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: cancelled child #34 is still on wip/30-integration' && ok || bad "gate ship: a cancelled child still on the branch blocks (exit $rc): $out"
