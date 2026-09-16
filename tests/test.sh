@@ -744,7 +744,7 @@ PRS=$(printf '%s' "$PRS" | jq -c '.[0].mergeable = "CONFLICTING"'); export PRS
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: the integration branch conflicts with main — merge it directly, resolve, push: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ! has "$out" 'child task' && ok || bad "gate ship: a conflicting integration branch names the direct merge, never a child task (exit $rc): $out"
 git push -q -f origin "$keep:main" && git fetch -q origin && git checkout -q wip/30-integration && git branch -q -D tmp-clash
 # the merge the gate names, run as /t-ship does: the block clears and the child's clean PR is fine
-git branch -q -f wip/30-integration origin/wip/30-integration~1   # stale local branch: children merged on GitHub since
+git reset -q --hard origin/wip/30-integration~1 && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/wip/30-integration)" ] || bad "gate ship fixture: stale local integration branch"   # children merged on GitHub since
 (git fetch -q origin && git checkout -q -B wip/30-integration origin/wip/30-integration && git merge -q origin/main && git push -q origin wip/30-integration) && ok || bad "gate ship: the named merge from a stale local integration branch"
 pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^record: docs/tasks/36-e.md (already on main' && ! has "$out" 'trunk-behind' && ok || bad "gate ship: a completed child whose record is already on the trunk ships (exit $rc): $out"
