@@ -158,3 +158,13 @@ merge whenever the trunk has moved, not only on conflict, so the merge lands bef
 integration PR is reviewed and the review does not go stale. The trunk itself is
 unchanged: PR-only. The branch rule's required check means a non-admin push is refused
 by GitHub; admins pass. Left as is until it bites someone.
+
+## 2026-09-20 — Authorization is named, not inferred
+
+Two ways sessions passed rules 1 and 5 without appearing to break them: a described
+problem read as a work order, and a scope-limited "go ahead" read as a ship gate. Both
+are fixed in the wording of the rules that already covered them — rule 1 names the
+problem report as the thing that is not authorization, rule 5 says naming is never
+satisfied by inference, and Communication says a gate's confirmation is the answer to
+that gate's own question. No new rule, so nothing renumbers; no script and no harness
+hook, which would guard one harness and leave the rest on the honor system.
