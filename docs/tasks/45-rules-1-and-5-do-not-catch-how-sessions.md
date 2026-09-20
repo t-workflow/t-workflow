@@ -57,7 +57,13 @@ the diff* became approval of *the whole task's readiness*, and a *general affirm
 became a *stage invocation*.
 
 ## Done when
-<from the issue>
+Rule 1, rule 5 and the Communication paragraph of `.t-workflow/AGENTS.md` each name,
+in their own words, the case they were failing to catch — a described problem read as
+a work order, and a terse or scope-limited reply read as naming a stage or confirming
+a gate — with no rule added or renumbered, no script, and no harness-specific hook.
+The issue states no test can settle this: the acceptance condition is a human reading
+the new text against failures (A) and (B) in the issue, and judging that an
+unambiguous reply naming a stage still proceeds with no extra stop.
 
 ## Explicitly not
 - No new scripts or mechanical ambiguity-detection tooling under `scripts/`.
@@ -72,11 +78,18 @@ became a *stage invocation*.
   cross-reference update to stay consistent.
 
 ## Decisions made along the way
-- none
+- Extended rules 1 and 5 and the Communication paragraph in place rather than adding a
+  numbered rule, so nothing after them renumbers and no skill or script citing a rule
+  by number breaks. Recorded in `docs/decisions.md`.
+- Left enforcement in prose: a script or a `PreToolUse` hook would guard one harness
+  and leave the rest on the honor system, which the issue rules out.
 
 ## Deviations / notes
-- none
+- The review's Low finding on the word "terse" in rule 5 is left open for the human at
+  the ship gate; fix mode addresses blockers and highs only.
 
 ## Agents
 - plan: claude-code / claude-opus-5[1m]
 - work: claude-code / claude-opus-5[1m]
+- review: claude-code / claude-opus-5[1m] (fresh session)
+- work (fix): claude-code / claude-opus-5[1m]
