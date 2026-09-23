@@ -655,6 +655,7 @@ mkdir -p "$tmp/gh5"; cat > "$tmp/gh5/gh" <<'STUB'
 # stub gh for the gates. Fixtures in the environment, in gh's own JSON shapes:
 #   ISSUES   {"<n>": issue view object}          BLOCKERS {"<n>": blockedBy nodes}
 #   PRS      [pr view objects, with "state"]      CHILDREN {"<n>": subIssues nodes}
+#   PRDIFF   a file `pr diff` prints (unset = a one-line diff)
 # --jq/-q expressions are applied as gh applies them.
 args=("$@"); expr=""; st=open; num=""
 for i in "${!args[@]}"; do case "${args[$i]}" in --jq|-q) expr="${args[$((i+1))]}" ;; --state) st="${args[$((i+1))]}" ;; -F) case "${args[$((i+1))]}" in num=*) num="${args[$((i+1))]#num=}" ;; esac ;; esac; done
@@ -663,7 +664,7 @@ case "$1 $2" in
   "repo view") echo "o/r" ;;
   "issue view") j=$(printf '%s' "$ISSUES" | jq -c --arg n "$3" '.[$n] // empty'); [ -n "$j" ] || exit 1; emit "$j" ;;
   "issue list") emit "$(printf '%s' "$ISSUES" | jq -c --argjson b "${BLOCKERS:-{\}}" --arg s "$st" '[to_entries[] | .value + {blockedBy: {nodes: ($b[.key] // [])}} | select($s == "all" or (.state | ascii_downcase) == $s)]')" ;;
-  "pr diff") echo "diff --git a/x b/x" ;;
+  "pr diff") if [ -n "${PRDIFF:-}" ]; then cat "$PRDIFF"; else echo "diff --git a/x b/x"; fi ;;
   "pr list") emit "$(printf '%s' "${PRS:-[]}" | jq -c --arg s "$st" '[.[] | select($s == "all" or (.state | ascii_downcase) == $s)]')" ;;
   "pr view") j=$(printf '%s' "${PRS:-[]}" | jq -c --argjson n "$3" '.[] | select(.number == $n)'); [ -n "$j" ] || exit 1; emit "$j" ;;
   "api graphql")
@@ -704,70 +705,78 @@ out=$(g work 32); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: a blocker is no
 export BLOCKERS='{"32":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"}]}'
 out=$(g work 32); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^base: wip/30-integration' && ok || bad "gate work: the sibling closed as completed unblocks (exit $rc): $out"
 # the child's PR: into the integration branch, merged without a question
-# pr <number> <title> <state> _ _ <head> <base> <files>: sets PRS to that one PR, in gh's shape
-pr() { PRS=$(printf '[{"number":%s,"title":"%s","url":"u/%s","state":"%s","isDraft":true,"body":"","updatedAt":"2026-01-01T00:00:00Z","mergeable":"MERGEABLE","headRefOid":"%s","headRefName":"%s","baseRefName":"%s","files":%s,"reviews":[],"commits":[{"committedDate":"2026-01-01T00:00:00Z"}],"statusCheckRollup":[]}]' "$1" "$2" "$1" "$3" "$(git rev-parse "$6")" "$6" "$7" "$(printf '%s' "$8" | jq -c 'map({path: .})')"); export PRS; }
+# pr <number> <title> <state> _ _ <head> <base>: sets PRS to that one PR, in gh's shape; its files are the branch's real diff
+pr() { PRS=$(printf '[{"number":%s,"title":"%s","url":"u/%s","state":"%s","isDraft":true,"body":"","updatedAt":"2026-01-01T00:00:00Z","mergeable":"MERGEABLE","headRefOid":"%s","headRefName":"%s","baseRefName":"%s","reviews":[],"commits":[{"committedDate":"2026-01-01T00:00:00Z"}],"statusCheckRollup":[]}]' "$1" "$2" "$1" "$3" "$(git rev-parse "$6")" "$6" "$7"); export PRS; }
+# tweak_integration <command>: a commit of <command> on origin/wip/30-integration, pushed,
+# so the PR's real file list (read from git) holds what a case needs; untweak restores it.
+tweak_integration() { itip=$(git rev-parse origin/wip/30-integration) && git checkout -q -B tmp-tweak "$itip" && eval "$1" && git add -A && git commit -qm tweak && git push -q -f origin tmp-tweak:wip/30-integration && git fetch -q origin && git checkout -q main && git branch -q -D tmp-tweak; }
+untweak_integration() { git push -q -f origin "$itip:refs/heads/wip/30-integration" && git fetch -q origin; }
 mkrec() { printf '# %s — %s\nIssue: #%s\n\n## Asked\nDo %s.\n\n## Done when\nIt is done.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' "$1" "$2" "$1" "$2" > "docs/tasks/$1-$3.md"; }
 git checkout -q -b wip/31-a origin/wip/30-integration && mkdir -p src docs/tasks && echo a > src/a.txt && mkrec 31 A a
 git add -A && git commit -qm "a" && git push -q -u origin wip/31-a
-pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration '["docs/tasks/31-a.md","src/a.txt"]'
+pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration
 out=$(g ship 31); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^merge: automatic (into wip/30-integration; the human.s gate is /t-ship 30)$' && has "$out" '^record: docs/tasks/31-a.md$' && has "$out" 'wip/31-a → wip/30-integration' && ok || bad "gate ship: a child's PR into the integration branch merges automatically (exit $rc): $out"
-pr 101 '[31] A' OPEN _ _ wip/31-a main '["docs/tasks/31-a.md","src/a.txt"]'
+pr 101 '[31] A' OPEN _ _ wip/31-a main
 out=$(g ship 31); rc=$?; [ "$rc" -eq 1 ] && has "$out" "BLOCKED: PR base is main; a child's PR merges into wip/30-integration" && ok || bad "gate ship: a child's PR against the trunk is refused (exit $rc): $out"
 # the parent's PR: the integration branch to the trunk, after the children landed
 git checkout -q -B wip/30-integration origin/wip/30-integration && git merge -q --squash wip/31-a && git commit -qm "[31] A (#101)"
 echo b > src/b.txt && mkrec 32 B b && git add -A && git commit -qm "[32] B (#104)" && git push -q origin wip/30-integration
 git checkout -q main
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"OPEN","stateReason":null,"title":"B"}]}'
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" '^merge: confirm$' && has "$out" 'BLOCKED: child #32 is still open' && has "$out" '^record: docs/tasks/31-a.md$' && ok || bad "gate ship: a parent blocks while a child is open (exit $rc): $out"
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: parent$' && has "$out" '^record: docs/tasks/32-b.md$' && ! has "$out" 'Plan' && ok || bad "gate ship: every child closed as completed with its record → the parent may ship, no plan asked (exit $rc): $out"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","src/a.txt","src/b.txt"]'
+tweak_integration 'git rm -q docs/tasks/32-b.md' || bad "gate ship fixture: drop a record"
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: completed child #32 has no record' && ok || bad "gate ship: a completed child whose record is not in the diff blocks (exit $rc): $out"
+untweak_integration
 # a child that merged into the trunk itself, under a release without integration branches: its record is on the trunk, not in the diff
 mkdir -p docs/tasks && mkrec 36 E e && git add -A && git commit -qm "[36] E (#99)" && git push -q origin main && git fetch -q origin
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":36,"state":"CLOSED","stateReason":"COMPLETED","title":"E"}]}'
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 # the trunk moved: the integration branch takes it by a merge pushed to it directly, named by the gate — never by a child PR
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" '^trunk-behind: 1 commit(s) of main not on wip/30-integration$' && has "$out" 'BLOCKED: wip/30-integration does not carry the current main — merge it directly.*: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ! has "$out" 'child task' && ok || bad "gate ship: a parent whose integration branch lacks the trunk names the direct merge (exit $rc): $out"
 # a child PR carrying that merge instead is refused: its squash would drop the merge parent
 git checkout -q -b wip/32-b2 origin/wip/30-integration && git merge -q origin/main && git push -q -u origin wip/32-b2
 ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "OPEN"'); export ISSUES
-pr 108 '[32] B' OPEN _ _ wip/32-b2 wip/30-integration '["docs/tasks/32-b.md","docs/tasks/36-e.md"]'
+pr 108 '[32] B' OPEN _ _ wip/32-b2 wip/30-integration
 out=$(g ship 32); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: this branch carries 1 trunk commit(s); merge origin/main into wip/30-integration directly instead of through a child: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ok || bad "gate ship: a child carrying trunk commits is refused (exit $rc): $out"
 ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "CLOSED"'); export ISSUES
 # a conflicting trunk names the same commands
 keep=$(git rev-parse origin/main)
 git checkout -q -b tmp-clash origin/main && echo clash > base.txt && git commit -qam "[38] clash" && git push -q origin tmp-clash:main && git fetch -q origin || bad "gate ship fixture: clash on main"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 PRS=$(printf '%s' "$PRS" | jq -c '.[0].mergeable = "CONFLICTING"'); export PRS
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: the integration branch conflicts with main — merge it directly, resolve, push: git fetch origin && git checkout -B wip/30-integration origin/wip/30-integration && git merge origin/main && git push origin wip/30-integration$' && ! has "$out" 'child task' && ok || bad "gate ship: a conflicting integration branch names the direct merge, never a child task (exit $rc): $out"
 git push -q -f origin "$keep:main" && git fetch -q origin && git checkout -q wip/30-integration && git branch -q -D tmp-clash
 # the merge the gate names, run as /t-ship does: the block clears and the child's clean PR is fine
 git reset -q --hard origin/wip/30-integration~1 && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/wip/30-integration)" ] || bad "gate ship fixture: stale local integration branch"   # children merged on GitHub since
 (git fetch -q origin && git checkout -q -B wip/30-integration origin/wip/30-integration && git merge -q origin/main && git push -q origin wip/30-integration) && ok || bad "gate ship: the named merge from a stale local integration branch"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^record: docs/tasks/36-e.md (already on main' && ! has "$out" 'trunk-behind' && ok || bad "gate ship: a completed child whose record is already on the trunk ships (exit $rc): $out"
-git checkout -q -B wip/32-b2 origin/wip/30-integration && echo b2 > src/b.txt && git commit -qam b2 && git push -q -f origin wip/32-b2
+git checkout -q -B wip/32-b2 origin/wip/30-integration && echo b2 > src/b.txt && echo "- b2" >> docs/tasks/32-b.md && git commit -qam b2 && git push -q -f origin wip/32-b2
 ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "OPEN"'); export ISSUES
-pr 108 '[32] B' OPEN _ _ wip/32-b2 wip/30-integration '["docs/tasks/32-b.md","src/b.txt"]'
+pr 108 '[32] B' OPEN _ _ wip/32-b2 wip/30-integration
 out=$(g ship 32); rc=$?; [ "$rc" -eq 0 ] && ok || bad "gate ship: a child on an integration branch that took the trunk carries no trunk commits (exit $rc): $out"
 ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["32"].state = "CLOSED"'); export ISSUES
 git checkout -q main && git branch -q -D wip/32-b2 && git push -q origin --delete wip/32-b2
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"},{"number":34,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"D"}]}'
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","docs/tasks/34-d.md","src/a.txt","src/b.txt"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
+tweak_integration 'mkrec 34 D d' || bad "gate ship fixture: a cancelled child's record"
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: cancelled child #34 is still on wip/30-integration' && ok || bad "gate ship: a cancelled child still on the branch blocks (exit $rc): $out"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+untweak_integration
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && ok || bad "gate ship: a cancelled child whose revert landed is fine (exit $rc): $out"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md",".claude/skills/x/SKILL.md"]'
+tweak_integration 'mkdir -p .claude/skills/x && echo x > .claude/skills/x/SKILL.md' || bad "gate ship fixture: a protected file"
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: protected diff with no cold review' && ! has "$out" "no '## Plan'" && ok || bad "gate ship: a protected combined diff needs the review, never a plan on the parent (exit $rc): $out"
+untweak_integration
 export PRS='[]'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: no PR for #30 — open the integration PR: gh pr create --draft --base main --head wip/30-integration --title "\[30\] Init"' && ok || bad "gate ship: a parent with no PR names the command that opens it (exit $rc): $out"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '[]'; export CHILDREN='{"30":[]}'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main; export CHILDREN='{"30":[]}'
 out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: #30 has no children' && ok || bad "gate ship: a parent without children (exit $rc): $out"
 git checkout -q -b wip/33-c origin/main && mkdir -p docs/tasks && mkrec 33 C c
 git add -A && git commit -qm c && git push -q -u origin wip/33-c && git checkout -q main
-pr 103 '[33] C' OPEN _ _ wip/33-c main '["docs/tasks/33-c.md"]'
+pr 103 '[33] C' OPEN _ _ wip/33-c main
 out=$(g ship 33); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^merge: confirm$' && has "$out" '^record: docs/tasks/33-c.md$' && ok || bad "gate ship: a plain task still asks the human (exit $rc): $out"
 
 echo "# ci.sh: a child's PR and the initiative's PR"
@@ -791,7 +800,7 @@ out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc
 [ "$rc" -eq 1 ] && has "$out" 'FAIL: cancelled child #32 is still on wip/30-integration' && ok || bad "ci: a cancelled child still in the diff fails (exit $rc): $out"
 git checkout -q -b wip/30-prot origin/wip/30-integration && mkdir -p .claude/skills/x && echo x > .claude/skills/x/SKILL.md && git add -A && git commit -qm prot -q
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}'
-pr 102 '[30] Init' OPEN _ _ wip/30-prot main '[]'
+pr 102 '[30] Init' OPEN _ _ wip/30-prot main
 out=$(PR_REF=wip/30-prot ci5 main wip/30-integration 102 "[30] Init"); rc=$?
 [ "$rc" -eq 1 ] && has "$out" "OK: a parent's plans are its children's" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a protected combined diff needs the review, never a plan on the parent (exit $rc): $out"
 # a task whose slug is exactly "integration" is a task: the label decides, not the branch
@@ -821,13 +830,24 @@ git checkout -q main
 echo "# snapshot.sh review / status for an initiative (stubbed gh)"
 sn() { PATH="$tmp/gh5:$PATH" "$S/snapshot.sh" "$@" 2>&1; }
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}'
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md","docs/tasks/32-b.md","src/a.txt","src/b.txt"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 out=$(sn review 30); rc=$?
 [ "$rc" -eq 0 ] && [ "$(printf '%s' "$out" | jq -r '.children | length')" = 2 ] && [ "$(printf '%s' "$out" | jq -r '.children[0].record')" = docs/tasks/31-a.md ] && printf '%s' "$out" | jq -r '.children[0].plan' | grep -q '^- `src/a.txt`$' && [ "$(printf '%s' "$out" | jq -r '.children[1].plan')" = "" ] && [ "$(printf '%s' "$out" | jq -r '.pr.baseRefName')" = main ] && ok || bad "snapshot review: an initiative carries its children with their plans and records (exit $rc): $out"
-pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration '["docs/tasks/31-a.md"]'
+# more than 100 files, the records last alphabetically, and a diff longer than the command line allows: gh's file list stops at 100, so both read from git
+many='mkdir -p a && for i in $(seq 1 110); do echo "$i" > "a/f$i.txt"; done'
+awk -v n="$(getconf ARG_MAX)" 'BEGIN { while (c <= n) { print "+ a line of a diff too large to pass to jq as an argument"; c += 57 } }' > "$tmp/big.diff"
+tweak_integration "$many" || bad "fixture: a PR of more than 100 files"
+out=$(g ship 30); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^files: 11[0-9]$' && has "$out" '^record: docs/tasks/31-a.md$' && has "$out" '^record: docs/tasks/32-b.md$' && ! has "$out" 'has no record' && ok || bad "gate ship: a PR of more than 100 files finds every child's record (exit $rc): $out"
+out=$(PRDIFF="$tmp/big.diff" sn review 30); rc=$?
+[ "$rc" -eq 0 ] && [ "$(printf '%s' "$out" | jq '.pr.files | length')" -gt 110 ] && [ "$(printf '%s' "$out" | jq -r '.children[1].record')" = docs/tasks/32-b.md ] && [ "$(printf '%s' "$out" | jq '.diff | length')" -gt "$(getconf ARG_MAX)" ] && ok || bad "snapshot review: more than 100 files and a diff past ARG_MAX (exit $rc): $(printf '%s' "$out" | head -c 600)"
+untweak_integration
+tweak_integration "$many && git rm -q docs/tasks/32-b.md" || bad "fixture: a PR of more than 100 files missing a record"
+out=$(g ship 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: completed child #32 has no record' && ok || bad "gate ship: a record really missing from a PR of more than 100 files still blocks (exit $rc): $out"
+untweak_integration
+pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration
 out=$(sn review 31); rc=$?
 [ "$rc" -eq 0 ] && [ "$(printf '%s' "$out" | jq -r '.children | length')" = 0 ] && ok || bad "snapshot review: a child has no children (exit $rc): $out"
-pr 102 '[30] Init' OPEN _ _ wip/30-integration main '["docs/tasks/31-a.md"]'
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 export BLOCKERS='{"32":[{"number":31,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"A"}]}'
 out=$(sn status)
 has "$out" '^- #30 Init · integration branch · PR #102 draft, checks none, review none$' && has "$out" '^- #32 B · part of #30 · blocked by #31$' && ! has "$out" 'wip/30-integration has no open issue' && has "$out" '^- branch wip/31-a has no open issue$' && ok || bad "snapshot status: a parent shows its integration branch and PR; a cancelled child's stale branch is a warning: $out"
