@@ -168,3 +168,12 @@ problem report as the thing that is not authorization, rule 5 says naming is nev
 satisfied by inference, and Communication says a gate's confirmation is the answer to
 that gate's own question. No new rule, so nothing renumbers; no script and no harness
 hook, which would guard one harness and leave the rest on the honor system.
+
+## 2026-09-23 — The installer's preflight checks the repository, not just the login
+
+`gh auth status` passes for any signed-in account, so an account that cannot see the
+repository got through and failed later in `protect.sh`, in GitHub's "could not resolve"
+words, which read as though the repository did not exist. The preflight now runs the
+same `gh repo view` the scripts rely on and, when it fails, names the account, the
+origin repository, and the two ways out. One extra `gh` call per PR-mode run; `--no-pr`
+still skips all of it.

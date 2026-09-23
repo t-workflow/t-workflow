@@ -304,13 +304,20 @@ out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/collide" --no-pr 2>&
 [ "$rc" -ne 0 ] && has "$out" 'refusing to overwrite' && has "$out" '.claude/skills/t-open' && ok || bad "install: adopt refuses a colliding path and lists it (exit $rc): $out"
 [ "$(cat "$tmp/collide/.claude/skills/t-open/SKILL.md")" = mine ] && ok || bad "install: a refused run changes nothing"
 # PR mode starts from the trunk branch or a detached worktree at origin/<trunk>, nothing else
-mkdir -p "$tmp/ghwt" && printf '#!/usr/bin/env bash\n[ "$1" = auth ] && exit 0\necho "stub-gh $*" >&2; exit 1\n' > "$tmp/ghwt/gh" && chmod +x "$tmp/ghwt/gh"
+mkdir -p "$tmp/ghwt" && printf '#!/usr/bin/env bash\n[ "$1" = auth ] && exit 0\n[ "$1 $2" = "repo view" ] && { echo o/wt; exit 0; }\necho "stub-gh $*" >&2; exit 1\n' > "$tmp/ghwt/gh" && chmod +x "$tmp/ghwt/gh"
 git init -q --bare -b main "$tmp/wt-origin.git" && git clone -q "$tmp/wt-origin.git" "$tmp/wt-main" 2>/dev/null && (cd "$tmp/wt-main" && git commit -q --allow-empty -m i && git push -q origin main && git worktree add -q --detach "$tmp/wt" origin/main)
 out=$(PATH="$tmp/ghwt:$PATH" bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/wt" 2>&1)
 has "$out" 'stub-gh issue create' && ! has "$out" 'run this from' && ok || bad "install: a detached worktree at origin/main passes the branch check: $out"
 (cd "$tmp/wt" && git checkout -q -b feature && git commit -q --allow-empty -m mine)
 out=$(PATH="$tmp/ghwt:$PATH" bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/wt" 2>&1); rc=$?
 [ "$rc" -ne 0 ] && has "$out" 'run this from the trunk branch' && ! has "$out" 'stub-gh issue' && ok || bad "install: a feature branch with its own commits is refused (exit $rc): $out"
+# PR mode stops in the preflight when the signed-in account cannot see the repository
+mkdir -p "$tmp/ghno" && printf '#!/usr/bin/env bash\n[ "$1" = auth ] && exit 0\n[ "$1 $2" = "api user" ] && { echo someone; exit 0; }\necho "stub-gh $*" >&2; exit 1\n' > "$tmp/ghno/gh" && chmod +x "$tmp/ghno/gh"
+(cd "$tmp/wt" && git checkout -q --detach origin/main && git remote set-url origin git@github.com:acme/secret.git)
+out=$(PATH="$tmp/ghno:$PATH" bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/wt" 2>&1); rc=$?
+[ "$rc" -ne 0 ] && has "$out" 'signed in as someone, which cannot see acme/secret' && has "$out" 'gh auth login' && has "$out" '--no-pr' && ! has "$out" 'stub-gh issue' && [ -z "$(git -C "$tmp/wt" status --porcelain)" ] && [ ! -e "$tmp/wt/.t-workflow" ] && ok || bad "install: an account that cannot see the repository stops in the preflight (exit $rc): $out"
+out=$(PATH="$tmp/ghno:$PATH" bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/wt" --no-pr 2>&1) && ok || bad "install: --no-pr needs no GitHub access: $out"
+(cd "$tmp/wt" && git reset -q --hard && git clean -qfd)
 # a git source: no tag means the newest tag; a tag means that tag
 git clone -q --bare "$ROOT" "$tmp/src.git" && git -C "$tmp/src.git" tag v9.9.1 && git -C "$tmp/src.git" tag v9.9.10 && git -C "$tmp/src.git" tag v9.9.2 && git -C "$tmp/src.git" tag rel/v9.9.3
 mkdir -p "$tmp/f" && (cd "$tmp/f" && git init -q -b main && git commit -q --allow-empty -m i)
