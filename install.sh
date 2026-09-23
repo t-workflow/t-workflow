@@ -90,6 +90,13 @@ note "mode: $mode → $tag ($why)"
 if [ "$pr" = yes ]; then
   command -v gh >/dev/null || die "gh is required (or use --no-pr)"
   gh auth status >/dev/null 2>&1 || die "gh is not authenticated (or use --no-pr)"
+  # A signed-in account is not enough: it must see this repository. GitHub answers
+  # "not found" for a private repository the token cannot see, so say it here instead.
+  if ! gh repo view --json nameWithOwner -q .nameWithOwner >/dev/null 2>&1; then
+    repo=$(git remote get-url origin 2>/dev/null | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')
+    who=$(gh api user -q .login 2>/dev/null) || who=unknown
+    die "gh is signed in as ${who:-unknown}, which cannot see ${repo:-the repository at origin}; sign in with an account that has access (gh auth login, or gh auth switch), or use --no-pr to change files only"
+  fi
 fi
 [ -z "$(git status --porcelain)" ] || die "the working tree is not clean; commit or set aside your changes first"
 
