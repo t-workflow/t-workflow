@@ -8,7 +8,7 @@ depends on one agent.
 
 ## Install
 
-From the trunk branch of a clean checkout, with `gh` authenticated:
+From a clean checkout of the trunk branch, or of `origin/<trunk>` (a detached worktree works), with `gh` authenticated:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/t-workflow/t-workflow/main/install.sh | bash

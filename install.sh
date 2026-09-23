@@ -166,9 +166,12 @@ case "$mode" in
 esac
 id=""
 if [ "$pr" = yes ]; then
-  cur=$(git rev-parse --abbrev-ref HEAD)
-  [ "$cur" = "$trunk" ] || die "run this from the trunk branch ($trunk); you are on $cur"
+  # The task branch starts from origin/$trunk, so a detached worktree at that commit
+  # is as good a starting point as the trunk branch itself.
   git fetch -q origin
+  cur=$(git rev-parse --abbrev-ref HEAD)
+  [ "$cur" = "$trunk" ] || [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$trunk" 2>/dev/null)" ] \
+    || die "run this from the trunk branch ($trunk) or a checkout at origin/$trunk; you are on $cur"
   body=$(mktemp)
   {
     echo "## Goal"
