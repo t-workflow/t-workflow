@@ -862,11 +862,35 @@ untweak_integration
 pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration
 out=$(sn review 31); rc=$?
 [ "$rc" -eq 0 ] && [ "$(printf '%s' "$out" | jq -r '.children | length')" = 0 ] && ok || bad "snapshot review: a child has no children (exit $rc): $out"
+echo out > "$tmp/here.log"
+PRS=$(printf '%s' "$PRS" | jq -c --arg b "Closes #31"$'\n\n## Checks run\n'"- \`t\` — PASS — commit \`abc\` — output \`$tmp/here.log\`"$'\n'"- \`u\` — PASS — commit \`abc\` — output \`$tmp/gone.log\`"$'\n' '.[0].body = $b'); export PRS
+out=$(sn review 31); rc=$?
+[ "$rc" -eq 0 ] && [ "$(printf '%s' "$out" | jq -c '.local.check_outputs')" = "[{\"path\":\"$tmp/here.log\",\"readable\":true},{\"path\":\"$tmp/gone.log\",\"readable\":false}]" ] && ok || bad "snapshot review: each check's output path, and whether it can be read here (exit $rc): $out"
+pr 101 '[31] A' OPEN _ _ wip/31-a wip/30-integration
+out=$(sn review 31); rc=$?; [ "$rc" -eq 0 ] && [ "$(printf '%s' "$out" | jq -c '.local.check_outputs')" = '[]' ] && ok || bad "snapshot review: no output named, none listed (exit $rc): $out"
 pr 102 '[30] Init' OPEN _ _ wip/30-integration main
 export BLOCKERS='{"32":[{"number":31,"state":"CLOSED","stateReason":"NOT_PLANNED","title":"A"}]}'
 out=$(sn status)
 has "$out" '^- #30 Init · integration branch · PR #102 draft, checks none, review none$' && has "$out" '^- #32 B · part of #30 · blocked by #31$' && ! has "$out" 'wip/30-integration has no open issue' && has "$out" '^- branch wip/31-a has no open issue$' && ok || bad "snapshot status: a parent shows its integration branch and PR; a cancelled child's stale branch is a warning: $out"
 git checkout -q main; unset ISSUES BLOCKERS CHILDREN PRS
+
+echo "# check.sh"
+mk_repo "$tmp/ck" && (cd "$tmp/ck" && git add -A && git commit -qm install) || bad "fixture: a committed consumer repo"
+cd "$tmp/ck" || exit
+chk() { "$S/check.sh" "$@" 2>/dev/null; }
+out=$(chk 'echo "Tests run: 3, Failures: 0"'); rc=$?; log=$(printf '%s' "$out" | sed -n -E 's/.* — output `([^`]+)`$/\1/p')
+[ "$rc" -eq 0 ] && has "$out" "^- \`echo \"Tests run: 3, Failures: 0\"\` — PASS — commit \`$(git rev-parse HEAD)\` — output \`" && [ -r "$log" ] && grep -q '^Tests run: 3, Failures: 0$' "$log" && grep -q "^# commit: $(git rev-parse HEAD)$" "$log" && grep -q '^# exit: 0$' "$log" && case "$log" in "$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"/t-workflow/checks/*) true ;; *) false ;; esac && [ -z "$(git status --porcelain)" ] && ok || bad "check.sh: a passing check keeps its output under the git dir and prints the line (exit $rc): $out"
+out=$(chk 'echo boom; exit 3'); rc=$?; log=$(printf '%s' "$out" | sed -n -E 's/.* — output `([^`]+)`$/\1/p')
+[ "$rc" -eq 1 ] && has "$out" ' — FAIL — commit ' && grep -q '^boom$' "$log" && grep -q '^# exit: 3$' "$log" && ok || bad "check.sh: a failing check is FAIL with its real exit code kept (exit $rc): $out"
+sedi 's|^check=.*|check="echo configured"|' .t-workflow/config && git commit -qam cfg
+out=$(chk); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^- `echo configured` — PASS' && ok || bad "check.sh: no argument runs the configured check (exit $rc): $out"
+echo x > new.txt
+expect_exit 2 "check.sh: an untracked file refuses, the commit would not hold what ran" "$S/check.sh" true
+git add new.txt
+expect_exit 2 "check.sh: an uncommitted change refuses" "$S/check.sh" true
+git reset -q && rm -f new.txt
+sedi 's|^check=.*|check=""|' .t-workflow/config && git commit -qam nocfg
+expect_exit 2 "check.sh: no command anywhere refuses" "$S/check.sh"
 
 echo "# footprint (informational)"
 bytes=$(cd "$tmp/b" && git ls-files -s -o --exclude-standard | awk '$1!="120000"{print $NF}' | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}')
