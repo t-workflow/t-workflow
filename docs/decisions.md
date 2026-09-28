@@ -177,3 +177,13 @@ words, which read as though the repository did not exist. The preflight now runs
 same `gh repo view` the scripts rely on and, when it fails, names the account, the
 origin repository, and the two ways out. One extra `gh` call per PR-mode run; `--no-pr`
 still skips all of it.
+
+## 2026-09-28 — The review reads the implementer's check output
+
+A reviewer re-ran a ten-minute suite `/t-work` had just passed at the same sha, because
+the one-line claim was all it had to read. `check.sh` now runs each check on the
+committed head and keeps the raw output under the git directory — never the tree, so a
+consumer's diff does not grow — and the `## Checks run` line names it. The review reads
+that output and re-runs only on a named doubt, narrowest command first. Output is local
+only: a reviewer on another machine finds it missing and falls back to a narrow re-run.
+Posting it on the PR was not done — size limits, and a comment per check is noise.
