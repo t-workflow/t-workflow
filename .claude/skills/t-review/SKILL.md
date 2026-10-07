@@ -62,8 +62,8 @@ attribution goes; this skill never touches the working tree:
    longer reach the trunk, a merge that should not happen, or a gate silently skipped
    is high wherever it lives, a skill sentence included. So, never lower than high: a
    failed check, an unauthorized removal, a path outside scope, a protected path with
-   no `## Plan`, a protected area the issue does not name. Only blocker and high hold the verdict; medium and low are posted for
-   the human to decide.
+   no `## Plan`, a protected area the issue does not name. Only blocker and high hold
+   the verdict; medium and low are posted for the human to decide.
 5. Post with `gh pr review <pr> --comment --body-file <file>`:
 
 ```markdown
