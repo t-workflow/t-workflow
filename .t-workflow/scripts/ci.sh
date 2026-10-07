@@ -26,8 +26,8 @@ diff_range="origin/$BASE_REF...$PR_REF"
 changed=$(git -c core.quotePath=false diff --name-only "$diff_range")
 [ -n "$changed" ] || fail "this PR changes no files"
 
-# Policy (exempt, protected, plan_required, docs) is read from the base branch, so a PR cannot
-# judge itself by its own values. check stays the PR's own: a PR that changes the
+# Policy (exempt, protected, plan_required, docs) is read from the base branch, so a PR
+# cannot judge itself by its own values. check stays the PR's own: a PR that changes the
 # build is tested with its own command, and that change is visible in the diff.
 # The merged copy is exported for the gate's children (protected.sh re-reads the
 # config through lib.sh), so they judge by the same values.
