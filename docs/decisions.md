@@ -187,3 +187,48 @@ consumer's diff does not grow — and the `## Checks run` line names it. The rev
 that output and re-runs only on a named doubt, narrowest command first. Output is local
 only: a reviewer on another machine finds it missing and falls back to a narrow re-run.
 Posting it on the PR was not done — size limits, and a comment per check is noise.
+
+## 2026-10-06 — The config is protected
+
+`.t-workflow/config` holds `protected`, `exempt`, and `docs`, the settings that decide
+whether a diff gets a plan and a cold review. Unprotected, one PR could empty
+`protected=` and skip the review that would have caught it. It joins the built-in set,
+so every config edit, even to `check=`, is planned and reviewed. CI already reads the
+policy from the base branch, which stops a PR judging itself by its own new values; this
+closes the other half, that the change to the values went unreviewed.
+
+## 2026-10-06 — A plan and a review are chosen separately
+
+A consumer's numbers: about one task in five needs a fix pass after the cold review,
+while a plan for an issue whose Scope already names its paths mostly restates it. So
+`protected` keeps deciding the review, and a new key, `plan_required`, decides the plan.
+Its default is the literal `protected`, which also covers a config written before the
+key existed, so no project's verdicts change until it narrows the list. The built-in set
+always needs both: those files decide what the gates do.
+
+## 2026-10-06 — Protected areas: judged at /t-open, read by the gate
+
+Some of what most needs review is not a path: a change can stop an action being audited
+without touching the audit module. A project may describe such areas in words in
+`.t-workflow/areas.md`. The judgment is made where the human reads it: `/t-open` writes
+the areas an issue touches onto the issue, the gate reads that section mechanically,
+and `/t-review` flags an area the diff touches that the issue misses. An agent may add
+an area, never remove one. Path globs stay as the backstop.
+
+Alternatives: the gate judging each diff with a model (a model call in CI, not
+reproducible); path hints matched as globs (only `protected` again, under another
+name). The known gap, an issue wrongly marked as touching no area and so never
+reviewed, gets no model call at `/t-ship`. The merge question shows the issue's areas
+beside the project's, and the human judges there, at a gate they already answer. That
+costs nothing per ship. A child of an initiative merges with no question, but the
+parent's question lists every child's areas. An area has no path, so `plan_required`
+cannot name one: a named area needs a plan only while `plan_required` is `protected`.
+
+## 2026-10-06 — A pure move needs no plan and no review
+
+Moving superseded records into a subfolder left a reviewer nothing to judge but the
+move. The gates now read `git diff --name-status -M`, and a 100%-similarity rename is
+protected only when either end is in the built-in set, where a move changes what runs.
+Any edit, addition, or deletion is judged as before. Reading name-status also judges
+both ends of every rename. A name list shows only the new path, so before this an
+edited move out of a protected directory read as unprotected.

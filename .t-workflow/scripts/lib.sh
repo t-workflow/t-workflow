@@ -19,20 +19,23 @@ die() { echo "ERROR: $*" >&2; exit 2; }
 # single-quoted value, a quote inside the value, a $VAR) is said once on stderr, so an
 # empty value is never silent. TW_CONFIG_FILE points the parse at another file (ci.sh
 # exports a merged base-policy copy so the gate's children judge by the same values).
-check=""; protected=""; docs=""; exempt=""; reviewer_model=""
+# plan_required defaults to the literal `protected` ("the same as protected"), so a
+# config written before the key existed keeps today's verdicts.
+check=""; protected=""; docs=""; exempt=""; reviewer_model=""; plan_required="protected"
 load_config() {
-  check=""; protected=""; docs=""; exempt=""; reviewer_model=""
+  check=""; protected=""; docs=""; exempt=""; reviewer_model=""; plan_required="protected"
   local cfg="${1:-}" line kv n=0
   [ -n "$cfg" ] && [ -f "$cfg" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1)); line="${line%$'\r'}"
-    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model)="([^"$]*)"[[:space:]]*$/\1=\2/p')
+    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model|plan_required)="([^"$]*)"[[:space:]]*$/\1=\2/p')
     case "$kv" in
       check=*) check="${kv#check=}" ;;
       protected=*) protected="${kv#protected=}" ;;
       docs=*) docs="${kv#docs=}" ;;
       exempt=*) exempt="${kv#exempt=}" ;;
       reviewer_model=*) reviewer_model="${kv#reviewer_model=}" ;;
+      plan_required=*) plan_required="${kv#plan_required=}" ;;
       "") [[ "$line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*= ]] && echo "config: line $n ignored: $line" >&2 ;;
     esac
   done < "$cfg"
@@ -128,12 +131,32 @@ open_blockers() {
   return 0
 }
 
-# children_json <id>: [{number,title,state,stateReason}] — the issue's sub-issues, with
-# stateReason so a child closed as completed is told from one cancelled.
+# children_json <id>: [{number,title,state,stateReason,body}] — the issue's sub-issues,
+# with stateReason so a child closed as completed is told from one cancelled, and body
+# for the protected areas each names.
 children_json() {
   local nwo; nwo=$(repo_nwo)
-  gh api graphql -f query='query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){issue(number:$num){subIssues(first:100){nodes{number state stateReason title}}}}}' \
+  gh api graphql -f query='query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){issue(number:$num){subIssues(first:100){nodes{number state stateReason title body}}}}}' \
     -F o="${nwo%/*}" -F n="${nwo#*/}" -F num="$1" --jq '.data.repository.issue.subIssues.nodes'
+}
+
+# areas_file [ref]: the protected areas file (.t-workflow/AGENTS.md §Protected areas) at
+# <ref>, or in the working tree with no ref. Prints it; exit 1 when there is none, and
+# then no issue's areas count — a project without the file behaves as before it existed.
+areas_file() {
+  if [ -n "${1:-}" ]; then git show "$1:.t-workflow/areas.md" 2>/dev/null
+  else cat "$TW_DIR/areas.md" 2>/dev/null; fi
+}
+
+# area_names < areas file: each area's name, one per line (its '## ' heading).
+area_names() { normalize | sed -n 's/^## //p'; }
+
+# named_areas < issue body: the areas the issue's '## Protected areas' section names,
+# one per line — each bullet's text before ' — '. A bullet of 'none', or no section at
+# all (an issue from before areas existed), names none.
+named_areas() {
+  normalize | section "Protected areas" | sed -n 's/^[-*] *//p' | sed 's/ — .*//; s/[[:space:]]*$//' \
+    | grep -viE '^\(?none\)?\.?$' | grep . || true
 }
 
 # integration_branch <parent-id>: where an initiative's children land. The parent

@@ -7,8 +7,16 @@
 check="tests/test.sh"
 
 # Extra protected globs, space-separated, on top of the built-in set
-# (e.g. "db/migrate/* config/*"). A protected diff needs a plan and a cold review.
+# (e.g. "db/migrate/* config/*"). A protected diff needs a cold review, and a plan
+# unless plan_required below narrows that.
 protected=""
+
+# Globs whose diffs also need a `## Plan` before work, same syntax as protected. The
+# literal protected means the same list as protected; "" means only the built-in set,
+# which always needs both. A glob here outside protected asks for a plan, no review.
+# A protected area an issue names (.t-workflow/areas.md) needs a plan only while this
+# is protected.
+plan_required="protected"
 
 # Extra documentation globs, space-separated, on top of *.md and docs/*
 # (e.g. "site/*"). A documentation-only diff skips check 1.

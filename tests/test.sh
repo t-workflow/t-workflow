@@ -35,13 +35,30 @@ cd "$tmp/a" || exit
 expect_exit 0 "protected: a skill path" "$S/protected.sh" .claude/skills/t-open/SKILL.md
 expect_exit 0 "protected: the workflow file" "$S/protected.sh" .github/workflows/t-workflow.yml
 expect_exit 1 "protected: app code is not" "$S/protected.sh" src/app.rb
-expect_exit 1 "protected: config is not" "$S/protected.sh" .t-workflow/config
+expect_exit 0 "protected: the config itself, with protected= empty" "$S/protected.sh" .t-workflow/config
+expect_out ".t-workflow/config" "protected: the config echoes" "$S/protected.sh" .t-workflow/config
+"$S/protected.sh" --list | grep -qx '.t-workflow/config' && ok || bad "protected: --list includes the config"
 expect_exit 2 "protected: no input" bash -c "$S/protected.sh </dev/null"
 expect_out ".claude/skills/t-open/SKILL.md" "protected: echoes the hit" "$S/protected.sh" src/x .claude/skills/t-open/SKILL.md
 sedi 's|^protected=""|protected="db/migrate/* config/credentials"|' .t-workflow/config
 expect_exit 0 "protected: config glob with *" "$S/protected.sh" db/migrate/001_init.rb
 expect_exit 0 "protected: config directory pattern matches beneath" "$S/protected.sh" config/credentials/prod.yml
 expect_exit 1 "protected: sibling of a config pattern" "$S/protected.sh" config/routes.rb
+# plan_required: which protected paths also need a plan (absent or `protected` = all of them)
+expect_exit 0 "plan: key as installed (protected) — a protected path needs a plan" "$S/protected.sh" --plan db/migrate/001_init.rb
+grep -v '^plan_required=' .t-workflow/config > cfg.tmp && cp cfg.tmp .t-workflow/config && rm cfg.tmp
+expect_exit 0 "plan: key absent — today's verdict, a protected path needs a plan" "$S/protected.sh" --plan db/migrate/001_init.rb
+expect_exit 1 "plan: key absent — an unprotected path needs none" "$S/protected.sh" --plan src/app.rb
+echo 'plan_required="config/credentials"' >> .t-workflow/config
+expect_exit 1 "plan: narrower list — a protected path outside it needs no plan" "$S/protected.sh" --plan db/migrate/001_init.rb
+expect_exit 0 "plan: narrower list — ... but still a review" "$S/protected.sh" db/migrate/001_init.rb
+expect_exit 0 "plan: narrower list — a path inside it needs a plan" "$S/protected.sh" --plan config/credentials/prod.yml
+expect_exit 0 "plan: narrower list — the built-in set still needs both" "$S/protected.sh" --plan .t-workflow/scripts/gate.sh
+"$S/protected.sh" --plan --list | grep -qx 'config/credentials' && ! "$S/protected.sh" --plan --list | grep -qx 'db/migrate/\*' && ok || bad "plan: --plan --list prints the plan set"
+sedi 's|^plan_required=.*|plan_required=""|' .t-workflow/config
+expect_exit 1 "plan: empty — only the built-in set needs a plan" "$S/protected.sh" --plan config/credentials/prod.yml
+expect_exit 0 "plan: empty — the built-in set still does" "$S/protected.sh" --plan .claude/skills/t-open/SKILL.md
+sedi 's|^plan_required=.*|plan_required="protected"|' .t-workflow/config
 expect_exit 0 "docs-only: markdown and docs/" bash -c "printf 'README.md\ndocs/a/b.txt\n' | $S/docs-only.sh"
 expect_exit 1 "docs-only: one source file" bash -c "printf 'README.md\nsrc/a.c\n' | $S/docs-only.sh"
 expect_exit 2 "docs-only: no input" bash -c "printf '' | $S/docs-only.sh"
@@ -235,12 +252,18 @@ grep -q '^check="npm test"' "$tmp/c/.t-workflow/config" && ok || bad "install: c
 (cd "$tmp/c" && git add -A && git commit -qm installed-v1) >/dev/null 2>&1
 out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1); has "$out" "already at v1" && ok || bad "install: same tag is a no-op"
 # update keeps consumer-owned files, replaces owned ones
-(cd "$tmp/c" && echo 'hand edit' >> .claude/skills/t-open/SKILL.md && sedi 's/^check=.*/check="mine"/' .t-workflow/config && echo "mine" >> AGENTS.md && git add -A && git commit -qm c)
+[ ! -e "$tmp/c/.t-workflow/areas.md" ] && ok || bad "install: never creates the areas file"
+(cd "$tmp/c" && echo 'hand edit' >> .claude/skills/t-open/SKILL.md && sedi 's/^check=.*/check="mine"/' .t-workflow/config && echo "mine" >> AGENTS.md && printf '## Audit\nmine\n' > .t-workflow/areas.md && git add -A && git commit -qm c)
 (cd "$tmp/c" && grep -v '^exempt=' .t-workflow/config > cfg && printf '%s' "$(< cfg)" > .t-workflow/config && git add -A && git commit -qm "drop a key")
+# a config from before plan_required: no key, and the old one-line protected comment
+(cd "$tmp/c" && awk '/^# Globs whose diffs also need/{skip=1} skip&&/^plan_required=/{skip=0; next} skip{next} /^# unless plan_required below/{next} {sub(/A protected diff needs a cold review, and a plan$/, "A protected diff needs a plan and a cold review."); print}' .t-workflow/config > cfg && mv cfg .t-workflow/config && git add -A && git commit -qm "pre-plan_required config")
+grep -q 'plan_required' "$tmp/c/.t-workflow/config" && bad "install: fixture still carries plan_required" || ok
 out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update: $out"
 (cd "$tmp/c" && [ "$(cat .t-workflow/VERSION)" = v2 ] && grep -q '^check="mine"' .t-workflow/config && grep -q '^mine$' AGENTS.md && ! grep -q 'hand edit' .claude/skills/t-open/SKILL.md) && ok || bad "install: update replaced owned files and kept consumer ones"
 (cd "$tmp/c" && grep -q '^exempt=""' .t-workflow/config && grep -B1 '^exempt=""' .t-workflow/config | head -1 | grep -q '^# Branch globs') && has "$out" 'config: added exempt' && ok || bad "install: update appends a missing config key with its comment"
 [ "$(grep -c '^check=' "$tmp/c/.t-workflow/config")" = 1 ] && ok || bad "install: update does not duplicate present keys"
+[ "$(cat "$tmp/c/.t-workflow/areas.md")" = "$(printf '## Audit\nmine')" ] && ok || bad "install: update leaves the areas file alone"
+(cd "$tmp/c" && grep -q '^plan_required="protected"$' .t-workflow/config && grep -q '^# unless plan_required below narrows that.$' .t-workflow/config && ! grep -q 'needs a plan and a cold review' .t-workflow/config) && has "$out" 'config: added plan_required' && ok || bad "install: update appends plan_required with its default and rewrites the old protected comment: $(grep -E 'protected' "$tmp/c/.t-workflow/config")"
 (cd "$tmp/c" && sed -i.bak 's|^# Build/test command the agent runs locally.*|# Build/test command, run as check 1 (empty = no check 1 yet).|; /^# CI does not run it/d; s|^# Branch globs exempt.*|# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.|; s|^# Parsed by .t-workflow/scripts/\*.*|# Shell syntax: key="value". Read by .t-workflow/scripts/*.|; /^# inside the value, no variables/d' .t-workflow/config && rm -f .t-workflow/config.bak && git add -A && git commit -qm "old comments")
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update (comments)"
 (cd "$tmp/c" && grep -q '^# CI does not run it' .t-workflow/config && ! grep -q 'Check 1 still runs' .t-workflow/config && grep -q '^check="mine"' .t-workflow/config) && ok || bad "install: update rewrites the old default comments and keeps the values: $(grep -E '^#|^check=' "$tmp/c/.t-workflow/config" | head -8)"
@@ -423,6 +446,27 @@ printf 'protected="zz-only/*"\n' > "$tmp/cfg-base"
 expect_exit 0 "config: TW_CONFIG_FILE redirects the read (the CI merged copy)" env TW_CONFIG_FILE="$tmp/cfg-base" "$S/protected.sh" zz-only/a.txt
 expect_exit 1 "config: without it the working tree's own values apply" bash -c "cd $tmp/cfg && $S/protected.sh zz-only/a.txt"
 
+echo "# protected areas: the issue's section and the areas file"
+na() { (cd "$tmp/cfg" && . "$S/lib.sh" 2>/dev/null && printf '%b' "$1" | named_areas | paste -sd '|' -); }
+[ -z "$(na '## Goal\nx\n')" ] && ok || bad "areas: an issue with no section names none"
+[ -z "$(na '## Protected areas\n- none\n')" ] && ok || bad "areas: '- none' names none"
+[ "$(na '## Protected areas\n- Audit — stops an action being audited\n')" = "Audit" ] && ok || bad "areas: one area, reason dropped: $(na '## Protected areas\n- Audit — x\n')"
+[ "$(na '## Protected areas\r\n- Audit — x\r\n- Billing — y  \n## Plan\n- Not an area\n')" = "Audit|Billing" ] && ok || bad "areas: several, the section ends at the next heading: $(na '## Protected areas\n- Audit — x\n- Billing — y\n## Plan\n- Not an area\n')"
+[ "$(cd "$tmp/cfg" && . "$S/lib.sh" 2>/dev/null && printf '# Areas\n## Audit\nWhat gets audited.\nPaths: `audit/`\n## Billing\nHow a visit is billed.\n' | area_names | paste -sd '|' -)" = "Audit|Billing" ] && ok || bad "areas: area_names reads the headings"
+expect_exit 0 "areas: the areas file is in the built-in protected set" "$S/protected.sh" .t-workflow/areas.md
+
+echo "# protected.sh --status: a pure move outside the built-in set is not protected"
+ps() { (cd "$tmp/cfg" && printf "$1" | "$S/protected.sh" --status ${2:-}); }   # cfg: protected="ok/*"
+ps 'R100\tok/a.txt\tok/old/a.txt\n' >/dev/null && bad "status: a pure rename of a config-protected file is not protected" || ok
+ps 'R100\tok/a.txt\tok/old/a.txt\n' --plan >/dev/null && bad "status: ... and needs no plan" || ok
+ps 'R097\tok/a.txt\tok/old/a.txt\n' >/dev/null && ok || bad "status: a rename plus an edit stays protected"
+[ "$(ps 'R100\t.t-workflow/scripts/a.sh\t.t-workflow/scripts/b.sh\n')" = ".t-workflow/scripts/b.sh" ] && ok || bad "status: a pure rename within the built-in set stays protected"
+ps 'R100\tsrc/x.sh\t.claude/x.sh\n' >/dev/null && ok || bad "status: a pure move into the built-in set stays protected"
+[ "$(ps 'R100\t.claude/x.sh\tsrc/x.sh\n')" = ".claude/x.sh" ] && ok || bad "status: a pure move out of the built-in set stays protected"
+ps 'R090\t.claude/x.sh\tsrc/x.sh\n' >/dev/null && ok || bad "status: an edited move out of a protected directory is caught by its old path"
+ps 'D\tok/a.txt\nA\tok/b.txt\n' >/dev/null && ok || bad "status: a delete and an add of protected files stay protected"
+ps 'M\tsrc/a.txt\n' >/dev/null && bad "status: an unprotected edit is not protected" || ok
+
 echo "# ci.sh (offline parts)"
 mkdir -p "$tmp/e" && (cd "$tmp/e" && git init -q -b main && echo base > base.txt && git add -A && git commit -qm init && git clone -q --bare . "$tmp/e-origin" && git remote add origin "$tmp/e-origin" && git fetch -q origin)
 bash "$ROOT/install.sh" v0 --from "$ROOT" --dir "$tmp/e" --no-pr >/dev/null 2>&1 || bad "ci fixture: install"
@@ -447,7 +491,7 @@ sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config
 out=$(ci feature/x x); ! has "$out" 'exempt from the task gates' && has "$out" 'is not wip/<id>-<slug>' && ok || bad "ci: a PR cannot exempt itself with its own config: $out"
 git add -A && git commit -qm "self-exempt attempt"
 out=$(ci feature/x x); ! has "$out" 'exempt from the task gates' && ok || bad "ci: a committed self-exempt is still judged by the base: $out"
-has "$out" 'policy: exempt/protected/docs from origin/main' && ok || bad "ci: says where the policy came from: $out"
+has "$out" 'policy: exempt/protected/plan_required/docs from origin/main' && ok || bad "ci: says where the policy came from: $out"
 # ... but the base can: exempt the branch there and the gate stands down
 git checkout -q main && sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config && git add -A && git commit -qm "exempt feature branches" && git push -q origin main && git fetch -q origin && git checkout -q wip/5-thing
 out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch (policy from the base)"
@@ -462,6 +506,19 @@ has "$out" 'OK: title starts with \[5\]' && ok || bad "ci: PR_REF still checks t
 git checkout -q wip/5-thing
 sedi 's|^check=""|check="false"|' .t-workflow/config
 if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
+# plan_required from the base: a protected path outside it needs the review and no plan
+git checkout -q .t-workflow/config && git checkout -q main
+sedi 's|^protected=""|protected="db/*"|; s|^plan_required=.*|plan_required=""|' .t-workflow/config && git commit -qam "db protected, no plan" && git push -q origin main && git fetch -q origin
+git checkout -q -b wip/6-db && mkdir -p db && echo x > db/x.sql && git add -A && git commit -qm db
+out=$(ci wip/6-db "[6] Db"); has "$out" 'OK: no path in the diff needs a plan' && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: plan_required narrower on the base — review, no plan: $out"
+git checkout -q main && grep -v '^plan_required=' .t-workflow/config > cfg.tmp && mv cfg.tmp .t-workflow/config && git commit -qam "no plan_required key" && git push -q origin main && git fetch -q origin && git checkout -q wip/6-db
+out=$(ci wip/6-db "[6] Db"); has "$out" "FAIL: diff needs exactly one '## Plan' on issue #6" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a base config without the key gives today's verdict — plan and review: $out"
+# a pure move of protected files needs neither; the same move with an edit needs both
+git checkout -q main && mkdir -p db && printf 'one\ntwo\nthree\n' > db/old.sql && git add -A && git commit -qm "old migration" && git push -q origin main && git fetch -q origin
+git checkout -q -b wip/7-mv && mkdir -p db/archive && git mv db/old.sql db/archive/old.sql && printf '# 7 — Mv\nIssue: #7\n\n## Asked\nMove it.\n\n## Done when\nMoved.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-mv.md && git add -A && git commit -qm mv || bad "ci fixture: a pure move"
+out=$(ci wip/7-mv "[7] Mv"); has "$out" 'OK: record docs/tasks/7-mv.md' && has "$out" 'OK: no path in the diff needs a plan' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a pure move of a protected file needs no plan and no review: $out"
+echo four >> db/archive/old.sql && git commit -qam "edit too"
+out=$(ci wip/7-mv "[7] Mv"); has "$out" "FAIL: diff needs exactly one '## Plan' on issue #7" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a move plus an edit is protected: $out"
 
 echo "# t-workflow.yml: the triggers, and the gate step in three base shapes"
 wf="$ROOT/.github/workflows/t-workflow.yml"
@@ -709,6 +766,26 @@ export CHILDREN='{}' PRS='[]'
 g() { PATH="$tmp/gh5:$PATH" "$S/gate.sh" "$@" 2>&1; }
 out=$(g work 33); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: task$' && has "$out" '^base: main$' && has "$out" 'create wip/33-c from origin/main' && ok || bad "gate work: a plain task's base is the trunk (exit $rc): $out"
 out=$(g work 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: #30 is a parent' && ok || bad "gate work: a parent has no branch (exit $rc): $out"
+# plan_required: a protected scope outside it needs a review later, no plan now
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["39"] = {"number":39,"title":"Mig","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`db/x.sql`\n","parent":null}'); export ISSUES
+sedi 's|^protected=""|protected="db/*"|' .t-workflow/config
+out=$(g work 39); rc=$?; [ "$rc" -eq 1 ] && has "$out" "BLOCKED: scope touches a path that needs a plan" && ok || bad "gate work: plan_required as installed — a protected scope needs a plan (exit $rc): $out"
+sedi 's|^plan_required=.*|plan_required=""|' .t-workflow/config
+out=$(g work 39); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^protected: db/x.sql$' && has "$out" '^plan-required: none in the declared scope$' && ok || bad "gate work: plan_required narrower — protected, no plan needed (exit $rc): $out"
+git checkout -q .t-workflow/config
+# protected areas: counted only with an areas file; a named area needs a plan while plan_required is `protected`
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["40"] = {"number":40,"title":"Aud","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`src/v.txt`\n## Protected areas\n- Audit — a visit stops being audited\n","parent":null}'); export ISSUES
+out=$(g work 40); rc=$?; [ "$rc" -eq 0 ] && ! has "$out" '^areas:' && ok || bad "gate work: no areas file — a named area is ignored, as before (exit $rc): $out"
+printf '# Areas\n## Audit\nWhat gets audited.\n## Billing\nHow a visit is billed.\n' > .t-workflow/areas.md
+out=$(g work 40); rc=$?; [ "$rc" -eq 1 ] && has "$out" '^areas: Audit$' && has "$out" "BLOCKED: the issue names a protected area and has no '## Plan'" && ok || bad "gate work: one named area needs a plan (exit $rc): $out"
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["40"].body = "## Goal\nx\n## Scope\n`src/v.txt`\n## Protected areas\n- Audit — a\n- Billing — b\n"'); export ISSUES
+sedi 's|^plan_required=.*|plan_required=""|' .t-workflow/config
+out=$(g work 40); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^areas: Audit; Billing$' && ok || bad "gate work: several areas, plan_required narrowed — no plan asked (exit $rc): $out"
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["40"].body = "## Goal\nx\n## Scope\n`src/v.txt`\n## Protected areas\n- none\n"'); export ISSUES
+git checkout -q .t-workflow/config
+out=$(g work 40); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^areas: none named$' && ok || bad "gate work: '- none' names none (exit $rc): $out"
+out=$(g work 33); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^areas: none named$' && ok || bad "gate work: an issue from before areas, with no section, is not blocked (exit $rc): $out"
+rm -f .t-workflow/areas.md
 out=$(g work 31); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: child of #30$' && has "$out" '^base: wip/30-integration (integration branch of #30, created from origin/main)$' && has "$out" 'create wip/31-a from origin/wip/30-integration' && ok || bad "gate work: a child's base is the integration branch, created on first use (exit $rc): $out"
 git ls-remote --heads "$tmp/i-origin" | grep -q 'refs/heads/wip/30-integration$' && [ "$(git rev-parse origin/wip/30-integration)" = "$(git rev-parse origin/main)" ] && ok || bad "gate work: the integration branch exists on origin at the trunk's commit"
 out=$(g work 31); has "$out" '^base: wip/30-integration (integration branch of #30)$' && ok || bad "gate work: an existing integration branch is reused, not recreated: $out"
@@ -798,7 +875,7 @@ echo "# ci.sh: a child's PR and the initiative's PR"
 ci5() { BASE_REF="$1" HEAD_REF="$2" PR_NUMBER="$3" PR_TITLE="$4" GH_TOKEN=x PATH="$tmp/gh5:$PATH" "$S/ci.sh" 2>&1; }
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}' BLOCKERS='{}'
 out=$(PR_REF=wip/31-a ci5 wip/30-integration wip/31-a 101 "[31] A"); rc=$?
-[ "$rc" -eq 0 ] && has "$out" 'policy: exempt/protected/docs from origin/wip/30-integration' && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a child's PR is judged by today's rules from its base, the integration branch (exit $rc): $out"
+[ "$rc" -eq 0 ] && has "$out" 'policy: exempt/protected/plan_required/docs from origin/wip/30-integration' && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a child's PR is judged by today's rules from its base, the integration branch (exit $rc): $out"
 out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: record docs/tasks/32-b.md' && has "$out" 'OK: title starts with \[30\]' && ! has "$out" 'no record docs/tasks/30-' && ok || bad "ci: the initiative's PR is judged by its children's records, not its own (exit $rc): $out"
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":36,"state":"CLOSED","stateReason":"COMPLETED","title":"E"}]}'
@@ -822,6 +899,25 @@ out=$(PR_REF=wip/30-prot ci5 main wip/30-integration 102 "[30] Init"); rc=$?
 git checkout -q -b wip/35-integration origin/main && mkrec 35 Integration integration && git add -A && git commit -qm i -q
 out=$(PR_REF=wip/35-integration ci5 main wip/35-integration 105 "[35] Integration"); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'OK: record docs/tasks/35-integration.md' && ! has "$out" 'children' && ok || bad "ci: a task called Integration is judged as a task (exit $rc): $out"
+# protected areas in CI and at the ship gate: the areas file comes from the base branch
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["35"].body = "## Goal\nx\n## Protected areas\n- Audit — x\n"'); export ISSUES
+out=$(PR_REF=wip/35-integration ci5 main wip/35-integration 105 "[35] Integration"); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'OK: not a protected diff' && ok || bad "ci: no areas file on the base — a named area changes nothing (exit $rc): $out"
+keep=$(git rev-parse origin/main)
+git checkout -q -b tmp-areas origin/main && printf '# Areas\n## Audit\nWhat gets audited.\n## Billing\nHow a visit is billed.\n' > .t-workflow/areas.md && git add -A && git commit -qm areas && git push -q origin tmp-areas:main && git fetch -q origin || bad "ci fixture: areas on main"
+out=$(PR_REF=wip/35-integration ci5 main wip/35-integration 105 "[35] Integration"); rc=$?
+[ "$rc" -eq 1 ] && has "$out" '^protected areas: Audit$' && has "$out" "FAIL: diff needs exactly one '## Plan' on issue #35" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a named area on a base with the file needs a plan and a review (exit $rc): $out"
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["35"].body = "## Goal\nx\n"'); export ISSUES
+out=$(PR_REF=wip/35-integration ci5 main wip/35-integration 105 "[35] Integration"); rc=$?
+[ "$rc" -eq 0 ] && has "$out" 'OK: not a protected diff' && ok || bad "ci: an issue with no areas section is not blocked for lacking one (exit $rc): $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A","body":"## Protected areas\n- Billing — b\n"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B","body":"## Protected areas\n- none\n"}]}'
+out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
+[ "$rc" -eq 1 ] && has "$out" '^protected areas: Billing$' && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a parent's PR counts its children's areas (exit $rc): $out"
+pr 102 '[30] Init' OPEN _ _ wip/30-integration main
+out=$(g ship 30); has "$out" '^areas: Billing$' && has "$out" 'BLOCKED: protected diff with no cold review' && ok || bad "gate ship: a parent's areas are its children's, and make the diff protected: $out"
+export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}'
+out=$(g ship 30); has "$out" '^areas: none named (the project.s: Audit; Billing)$' && ! has "$out" 'no cold review' && ok || bad "gate ship: no child names an area — the line lists the project's for the merge question: $out"
+git push -q -f origin "$keep:main" && git fetch -q origin && git checkout -q wip/35-integration && git branch -q -D tmp-areas
 # /t-cancel's revert of a child already on the integration branch: the record goes, and that is accepted only for a cancelled issue
 git checkout -q -b wip/31-revert origin/wip/30-integration && git rm -q docs/tasks/31-a.md src/a.txt && git commit -qm "revert a" -q
 out=$(PR_REF=wip/31-revert ci5 wip/30-integration wip/31-revert 106 "[31] Revert: A"); rc=$?

@@ -24,10 +24,13 @@ fail() { echo "FAIL: $*"; rc=1; }
 git fetch -q origin "$BASE_REF" 2>/dev/null || true
 diff_range="origin/$BASE_REF...$PR_REF"
 changed=$(git -c core.quotePath=false diff --name-only "$diff_range")
+# Protection reads the name-status (protected.sh --status): a pure move outside the
+# built-in set is not protected, and both ends of every other rename are judged.
+status=$(git -c core.quotePath=false diff --name-status -M "$diff_range")
 [ -n "$changed" ] || fail "this PR changes no files"
 
-# Policy (exempt, protected, docs) is read from the base branch, so a PR cannot
-# judge itself by its own values. check stays the PR's own: a PR that changes the
+# Policy (exempt, protected, plan_required, docs) is read from the base branch, so a PR
+# cannot judge itself by its own values. check stays the PR's own: a PR that changes the
 # build is tested with its own command, and that change is visible in the diff.
 # The merged copy is exported for the gate's children (protected.sh re-reads the
 # config through lib.sh), so they judge by the same values.
@@ -42,11 +45,11 @@ if git cat-file -e "origin/$BASE_REF:.t-workflow/AGENTS.md" 2>/dev/null; then
   if git show "origin/$BASE_REF:.t-workflow/config" > "$base_cfg" 2>/dev/null; then
     load_config "$base_cfg"
     check="$check_pr"
-    # shellcheck disable=SC2154 # protected, docs, exempt, reviewer_model: set by load_config (lib.sh), sourced dynamically
-    printf 'check="%s"\nprotected="%s"\ndocs="%s"\nexempt="%s"\nreviewer_model="%s"\n' \
-      "$check" "$protected" "$docs" "$exempt" "$reviewer_model" > "$merged_cfg"
+    # shellcheck disable=SC2154 # protected, docs, exempt, reviewer_model, plan_required: set by load_config (lib.sh), sourced dynamically
+    printf 'check="%s"\nprotected="%s"\ndocs="%s"\nexempt="%s"\nreviewer_model="%s"\nplan_required="%s"\n' \
+      "$check" "$protected" "$docs" "$exempt" "$reviewer_model" "$plan_required" > "$merged_cfg"
     export TW_CONFIG_FILE="$merged_cfg"
-    echo "policy: exempt/protected/docs from origin/$BASE_REF; check from the PR"
+    echo "policy: exempt/protected/plan_required/docs from origin/$BASE_REF; check from the PR"
   else
     echo "note: origin/$BASE_REF has no .t-workflow/config; judging by the PR's values"
   fi
@@ -128,18 +131,37 @@ else
     # Issue: plan and blockers
     [ "${issue_unread:-}" = yes ] && fail "cannot read issue #$id"
     plans=$(printf '%s\n' "$body" | count_sections Plan)
-    if prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh"); then
-      echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"
-      if [ "$parent_pr" = yes ]; then ok "a parent's plans are its children's; each child was gated on its own"
-      else [ "$plans" -eq 1 ] && ok "protected diff has exactly one '## Plan'" || fail "protected diff needs exactly one '## Plan' on issue #$id (found $plans)"; fi
+    # Protected areas the issue names (a parent: its children's), counted only when the
+    # base branch has an areas file — policy, like the config, is never the PR's own.
+    areas=""
+    if areas_file "origin/$BASE_REF" >/dev/null; then
+      if [ "$parent_pr" = yes ]; then
+        areas=$(printf '%s' "${kids:-[]}" | jq -r '.[] | select(.stateReason != "NOT_PLANNED") | .number' | while IFS= read -r c; do
+          printf '%s' "$kids" | jq -r --argjson c "$c" '.[] | select(.number == $c) | .body // ""' | named_areas; done | sort -u)
+      else areas=$(printf '%s\n' "$body" | named_areas); fi
+      [ -n "$areas" ] && echo "protected areas: $(printf '%s\n' "$areas" | paste -sd ';' - | sed 's/;/; /g')"
+    fi
+    # A plan where plan_required says (protected.sh --plan), or for a named area while
+    # plan_required is `protected`; a review where protected says, or for any named area.
+    planp=$(printf '%s\n' "$status" | "$TW_SCRIPTS/protected.sh" --status --plan)
+    # shellcheck disable=SC2154 # plan_required: set by load_config (lib.sh), sourced dynamically
+    if [ "$parent_pr" = yes ]; then ok "a parent's plans are its children's; each child was gated on its own"
+    elif [ -n "$planp" ] || { [ -n "$areas" ] && [ "$plan_required" = protected ]; }; then
+      [ -n "$planp" ] && echo "plan-required paths: $(printf '%s' "$planp" | tr '\n' ' ')"
+      [ "$plans" -eq 1 ] && ok "diff that needs a plan has exactly one '## Plan'" || fail "diff needs exactly one '## Plan' on issue #$id (found $plans)"
+    else
+      [ "$plans" -le 1 ] && ok "no path in the diff needs a plan" || fail "issue #$id carries $plans '## Plan' sections"
+    fi
+    prot=$(printf '%s\n' "$status" | "$TW_SCRIPTS/protected.sh" --status)
+    if [ -n "$prot" ] || [ -n "$areas" ]; then
+      [ -n "$prot" ] && echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"
       reviews=$(gh pr view "$PR_NUMBER" --json reviews,commits 2>/dev/null) || reviews='{"reviews":[],"commits":[]}'
       rv=$(review_verdict "$(printf '%s' "$reviews" | jq -c .reviews)" "$(printf '%s' "$reviews" | jq -r '.commits[-1].committedDate // ""')")
       verdict=$(printf '%s\n' "$rv" | sed -n 's/^verdict: //p'); fresh=$(printf '%s\n' "$rv" | sed -n 's/^fresh: //p'); iso=$(printf '%s\n' "$rv" | sed -n 's/^isolation: //p')
       if [ "$verdict" = ready ] && [ "$fresh" = yes ]; then
         case "$iso" in *"same session"*) fail "cold review isolation is 'same session'" ;; *) ok "current cold review: ready ($iso)" ;; esac
       else fail "protected diff needs a cold review with 'readiness: ready' newer than the head commit (found: $verdict, fresh: $fresh)"; fi
-    else
-      [ "$plans" -le 1 ] && ok "not a protected diff" || fail "issue #$id carries $plans '## Plan' sections"
+    else ok "not a protected diff"
     fi
     if ob=$(open_blockers "$id"); then ok "no open blockers"; else fail "blockers not closed as completed: $(printf '%s' "$ob" | tr '\n' ';')"; fi
   fi

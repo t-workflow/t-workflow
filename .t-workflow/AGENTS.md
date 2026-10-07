@@ -16,8 +16,10 @@ agent session. Scripts under `.t-workflow/scripts/` make the judgments; skills c
    rule the skills follow, not an approval GitHub enforces. Never commit or push
    to it directly.
 4. **A protected diff needs a `## Plan` on its issue before implementation and a cold
-   review before shipping.** Protection comes from the paths a diff touches, never from
-   a label.
+   review before shipping.** Protection comes from the paths a diff touches or a
+   protected area its issue names (§Protected areas), never from a label. The config's
+   `protected` decides the review and, unless its `plan_required` narrows it, the plan;
+   the built-in set always needs both.
 5. **A skill runs only when the human named it**, and nothing chains from one stage to
    the next. `/t-drive` is the one exception: named once, it chains the stages itself.
    Named means said: a reply that is terse, general, or about something else is not a
@@ -76,9 +78,28 @@ merge and replay the conflict); the trunk itself still moves only by a confirmed
 
 ## Protected paths
 
-`.t-workflow/AGENTS.md`, `.t-workflow/scripts/`, `.claude/`, `.agents/`,
-`.github/workflows/`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, plus the `protected`
-globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executable form.
+`.t-workflow/AGENTS.md`, `.t-workflow/config`, `.t-workflow/scripts/`, `.claude/`,
+`.agents/`, `.github/workflows/`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, plus the
+`protected` globs in `.t-workflow/config` — which is protected itself, so a diff cannot
+loosen the settings that judge it. A pure move (git's 100% similarity) of a file outside
+the built-in set is not protected; a move into, out of, or within it is.
+`.t-workflow/scripts/protected.sh` is the executable form.
+
+## Protected areas
+
+What a path cannot name — "who can read a patient's notes", "what gets audited" — a
+project may describe in `.t-workflow/areas.md` (its own; protected; never written by
+the installer). One `## <Area name>` heading per area, then one or two sentences on
+what it covers, then optionally `Paths: ` with backticked hints for the judge — hints,
+never matched by a script. With no file, nothing below applies.
+
+`/t-open` judges each issue against the areas and writes a `## Protected areas`
+section: `- <Area name> — <one-line reason>` per area the work touches, or `- none`.
+An issue without the section names none. Each named area makes the task protected
+exactly as a protected path does (a plan only while `plan_required` is `protected`).
+`/t-review` reports an area the diff touches that the issue does not name as a blocker.
+An agent may add an area to an issue, never remove one: removing needs the human's
+word. The merge question shows what the issue names beside the project's areas.
 
 ## Checks
 

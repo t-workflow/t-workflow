@@ -34,7 +34,14 @@ Do not wait until everything is settled — decisions left in chat are lost.
 
 ## Non-goals
 <explicit exclusions>
+
+## Protected areas
+<only when .t-workflow/areas.md exists: `- <Area name> — <why this work touches it>`
+per area, or `- none`>
 ```
+
+Judge the areas from what the work will change, not from its paths alone — a change
+in clinical code can stop an action being audited. When unsure, name the area.
 
 **Commands.** Title short and imperative.
 
@@ -49,5 +56,6 @@ issue now, with `Split from: #<id>` as the body's last line. A non-goal that is 
 boundary ("does not touch billing") stays prose. Ask when unsure which it is.
 
 **Report** in plain language: each issue and what it means, dependencies, assumptions.
-Name the next command: `/t-plan <id>` when the Scope touches a protected path
-(`.t-workflow/scripts/protected.sh <paths>`) or needs pinning down; `/t-work <id>` otherwise.
+Name the next command: `/t-plan <id>` when the Scope touches a path that needs a plan
+(`.t-workflow/scripts/protected.sh --plan <paths>`) or needs pinning down; `/t-work <id>`
+otherwise.
