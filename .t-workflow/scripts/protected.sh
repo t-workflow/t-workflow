@@ -19,12 +19,11 @@ BUILTIN=".t-workflow/AGENTS.md .t-workflow/config .t-workflow/areas.md .t-workfl
 # single-file analysis.
 # shellcheck disable=SC2154
 extra="$protected"; status=no
+# shellcheck disable=SC2154,SC2086
 while [ $# -gt 0 ]; do
   case "$1" in
-    # shellcheck disable=SC2154
     --plan) [ "$plan_required" = protected ] || extra="$plan_required"; shift ;;
     --status) status=yes; shift ;;
-    # shellcheck disable=SC2086
     --list) printf '%s\n' $BUILTIN $extra; exit 0 ;;
     *) break ;;
   esac

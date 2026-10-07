@@ -23,7 +23,10 @@ A diff that only moves or renames protected files, changing none of their conten
 - `ci.sh` and `/t-work` step 5.3 are outside the issue's Scope and inside the plan's Allowed paths: without them CI and `/t-work` would still ask a pure move for a plan and review.
 - Found along the way: `git diff --name-only` lists only a renamed file's new path, so an edited move out of a protected directory read as unprotected. `--status` closes this for the gates. `snapshot.sh` and `/t-review` step 3 still read the name list; worth its own issue.
 - Limit: `gate.sh work` judges the issue's declared Scope before any diff exists, so a move task whose Scope names protected paths is still asked for a plan there. Leaving those paths out of the Scope's backticks, or planning anyway, gets past it. The ship gate and CI judge the real diff.
+- Fix pass (review on #54's PR, high): `# shellcheck disable` comments inside the `case` in `protected.sh` were a ShellCheck parse error that failed the `shellcheck` job. They now sit above the `while`. `shellcheck --severity=warning` is clean.
 
 ## Agents
 - plan: claude-code 2.1.292 / claude-opus-5-5
 - work: claude-code 2.1.292 / claude-opus-5-5
+- review: claude-code (Agent SDK subagent) / claude-opus-5-5 (subagent, on #54's PR)
+- work (fix): claude-code 2.1.292 / claude-opus-5-5
