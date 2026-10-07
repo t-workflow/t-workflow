@@ -10,7 +10,10 @@ Refuse a parent (`initiative`) issue: it has no diff to plan; name a child inste
 
 1. Decide what the work must touch. Run `.t-workflow/scripts/protected.sh --plan <paths>`
    on those paths: exit 0 lists the ones that need a plan, which is why this one is
-   required. Without `--plan` it lists the ones that will need a cold review.
+   required. Without `--plan` it lists the ones that will need a cold review. A
+   protected area named on the issue is a reason too; name its risks below. A review
+   finding an area the issue misses: add it to the issue's `## Protected areas` with
+   its reason, in the same edit as step 3. Never remove one.
 2. Read the code and documents the work depends on. Name every risk you can see: an
    existing behaviour the change could break, a check that cannot cover something, a
    judgment only a human can make.

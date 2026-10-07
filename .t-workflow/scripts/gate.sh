@@ -69,6 +69,17 @@ work)
       [ "$plans" -eq 1 ] || block "scope touches a path that needs a plan and the issue has no '## Plan' — run /t-plan $id"
     else echo "plan-required: none in the declared scope"; fi
   else echo "protected: scope not declared in backticks; judged from the diff later"; fi
+  # Protected areas count only where the project has an areas file. A named area is
+  # protected like a path; it needs a plan too unless plan_required narrows the plans.
+  if areas_file >/dev/null; then
+    areas=$(printf '%s\n' "$body" | named_areas)
+    if [ -n "$areas" ]; then
+      echo "areas: $(printf '%s\n' "$areas" | paste -sd ';' - | sed 's/;/; /g')"
+      # shellcheck disable=SC2154 # plan_required: set by lib.sh's config load
+      [ "$plan_required" = protected ] && [ "$plans" -ne 1 ] && ! printf '%s' "${planp:-}" | grep -q . \
+        && block "the issue names a protected area and has no '## Plan' — run /t-plan $id"
+    else echo "areas: none named"; fi
+  fi
 
   # The base: the trunk, or for a child of an initiative its integration branch,
   # created on origin from the trunk the first time a child is worked. The child
@@ -210,6 +221,21 @@ ship)
   if [ "$kind" != parent ] && planp=$(printf '%s\n' "$files" | "$TW_SCRIPTS/protected.sh" --plan); then
     echo "plan-required: $(printf '%s' "$planp" | tr '\n' ' ')"
     [ "$plans" -eq 1 ] || block "diff touches a path that needs a plan and the issue has no '## Plan' — run /t-plan $id, then /t-review $id"
+  fi
+  # Protected areas, from the areas file as the base branch has it: a named area makes
+  # the diff protected. A parent's are its children's, cancelled ones aside. With areas
+  # named nowhere, the line lists the file's areas so the merge question can show them.
+  if anames=$(areas_file "origin/$prbase" | area_names) && [ -n "$anames" ]; then
+    if [ "$kind" = parent ]; then
+      areas=$(printf '%s' "$kids" | jq -r '.[] | select(.stateReason != "NOT_PLANNED") | .number' | while IFS= read -r c; do
+        printf '%s' "$kids" | jq -r --argjson c "$c" '.[] | select(.number == $c) | .body // ""' | named_areas; done | sort -u)
+    else areas=$(printf '%s\n' "$body" | named_areas); fi
+    if [ -n "$areas" ]; then
+      echo "areas: $(printf '%s\n' "$areas" | paste -sd ';' - | sed 's/;/; /g')"; required=yes
+      # shellcheck disable=SC2154 # plan_required: set by lib.sh's config load
+      [ "$kind" != parent ] && [ "$plan_required" = protected ] && [ "$plans" -ne 1 ] && ! printf '%s' "${planp:-}" | grep -q . \
+        && block "the issue names a protected area and has no '## Plan' — run /t-plan $id, then /t-review $id"
+    else echo "areas: none named (the project's: $(printf '%s\n' "$anames" | paste -sd ';' - | sed 's/;/; /g'))"; fi
   fi
 
   rv=$(review_verdict "$(printf '%s' "$v" | jq -c .reviews)" "$(printf '%s' "$v" | jq -r '.commits[-1].committedDate')")

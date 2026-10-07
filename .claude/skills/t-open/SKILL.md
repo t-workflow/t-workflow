@@ -34,7 +34,14 @@ Do not wait until everything is settled — decisions left in chat are lost.
 
 ## Non-goals
 <explicit exclusions>
+
+## Protected areas
+<only when .t-workflow/areas.md exists: `- <Area name> — <why this work touches it>`
+per area, or `- none`>
 ```
+
+Judge the areas from what the work will change, not from its paths alone — a change
+in clinical code can stop an action being audited. When unsure, name the area.
 
 **Commands.** Title short and imperative.
 

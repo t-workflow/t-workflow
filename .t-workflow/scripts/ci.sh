@@ -128,16 +128,30 @@ else
     # Issue: plan and blockers
     [ "${issue_unread:-}" = yes ] && fail "cannot read issue #$id"
     plans=$(printf '%s\n' "$body" | count_sections Plan)
-    # A plan where plan_required says (protected.sh --plan); a review where protected says.
+    # Protected areas the issue names (a parent: its children's), counted only when the
+    # base branch has an areas file — policy, like the config, is never the PR's own.
+    areas=""
+    if areas_file "origin/$BASE_REF" >/dev/null; then
+      if [ "$parent_pr" = yes ]; then
+        areas=$(printf '%s' "${kids:-[]}" | jq -r '.[] | select(.stateReason != "NOT_PLANNED") | .number' | while IFS= read -r c; do
+          printf '%s' "$kids" | jq -r --argjson c "$c" '.[] | select(.number == $c) | .body // ""' | named_areas; done | sort -u)
+      else areas=$(printf '%s\n' "$body" | named_areas); fi
+      [ -n "$areas" ] && echo "protected areas: $(printf '%s\n' "$areas" | paste -sd ';' - | sed 's/;/; /g')"
+    fi
+    # A plan where plan_required says (protected.sh --plan), or for a named area while
+    # plan_required is `protected`; a review where protected says, or for any named area.
+    planp=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh" --plan)
+    # shellcheck disable=SC2154 # plan_required: set by load_config (lib.sh), sourced dynamically
     if [ "$parent_pr" = yes ]; then ok "a parent's plans are its children's; each child was gated on its own"
-    elif planp=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh" --plan); then
-      echo "plan-required paths: $(printf '%s' "$planp" | tr '\n' ' ')"
+    elif [ -n "$planp" ] || { [ -n "$areas" ] && [ "$plan_required" = protected ]; }; then
+      [ -n "$planp" ] && echo "plan-required paths: $(printf '%s' "$planp" | tr '\n' ' ')"
       [ "$plans" -eq 1 ] && ok "diff that needs a plan has exactly one '## Plan'" || fail "diff needs exactly one '## Plan' on issue #$id (found $plans)"
     else
       [ "$plans" -le 1 ] && ok "no path in the diff needs a plan" || fail "issue #$id carries $plans '## Plan' sections"
     fi
-    if prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh"); then
-      echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"
+    prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh")
+    if [ -n "$prot" ] || [ -n "$areas" ]; then
+      [ -n "$prot" ] && echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"
       reviews=$(gh pr view "$PR_NUMBER" --json reviews,commits 2>/dev/null) || reviews='{"reviews":[],"commits":[]}'
       rv=$(review_verdict "$(printf '%s' "$reviews" | jq -c .reviews)" "$(printf '%s' "$reviews" | jq -r '.commits[-1].committedDate // ""')")
       verdict=$(printf '%s\n' "$rv" | sed -n 's/^verdict: //p'); fresh=$(printf '%s\n' "$rv" | sed -n 's/^fresh: //p'); iso=$(printf '%s\n' "$rv" | sed -n 's/^isolation: //p')

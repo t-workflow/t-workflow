@@ -45,7 +45,9 @@ Read `.t-workflow/AGENTS.md`.
 4. `merge: automatic` → skip to step 5 as if answered yes; report what merged and
    into which branch. Otherwise **ask the human to confirm**, last thing in the message, with the PR URL, one plain
    paragraph of what merges and why, and the evidence: review verdict (or "no review
-   ran"), CI state, diff size, every pending human check, and every medium and low
+   ran"), CI state, diff size, the gate's `areas:` line (what the issue names, or that
+   it names none of the project's areas — the human's chance to disagree), every
+   pending human check, and every medium and low
    finding still open from the gate's `review-open-findings` lines, each in one plain
    sentence — confirming acknowledges them all; a human who wants one fixed first
    answers no and names it for `/t-work <id>`. Then ask, as the question this stop's

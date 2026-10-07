@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # One call for what a cold reader needs.
-#   snapshot.sh review <id>   JSON: {issue, plan, children, pr:{number,url,title,headRefOid,headRefName,baseRefName,files,reviews,head_time,checks_run}, diff, local:{head,clean,check_outputs}}
+#   snapshot.sh review <id>   JSON: {issue, plan, children, areas, pr:{number,url,title,headRefOid,headRefName,baseRefName,files,reviews,head_time,checks_run}, diff, local:{head,clean,check_outputs}}
 #                             local.check_outputs: [{path, readable}] for each `output` a checks_run line names (check.sh)
-#                             children: for an initiative, [{number,title,state,stateReason,plan,record}] — its plans and records are theirs
+#                             children: for an initiative, [{number,title,state,stateReason,body,plan,record}] — its plans and records are theirs
+#                             areas: {file, named} — the protected areas file as the PR's base has it ("" when none) and
+#                             the areas the issue names (an initiative: its children's), to check the classification against
 #   snapshot.sh status        text: parents and their children, open tasks with blockers, branch, PR, checks, review; warnings
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -31,12 +33,16 @@ review)
       children=$(printf '%s' "$children" | jq -c --argjson n "$c" --arg p "$cplan" 'map(if .number == $n then . + {plan: $p} else . end)')
     done < <(printf '%s' "$children" | jq -r '.[].number')
   fi
+  afile=$(areas_file "origin/$(printf '%s' "$prv" | jq -r .baseRefName)" || true)
+  named=$( { printf '%s' "$issue" | jq -r .body | named_areas
+             printf '%s' "$children" | jq -r '.[].number' | while IFS= read -r c; do
+               printf '%s' "$children" | jq -r --argjson c "$c" '.[] | select(.number == $c) | .body // ""' | named_areas; done; } | sort -u | jq -Rsc 'split("\n") | map(select(. != ""))')
   clean=true; [ -z "$(git status --porcelain | grep -v '^??')" ] || clean=false
   outputs=$(printf '%s' "$prv" | jq -r .checks_run | sed -n -E 's/.* — output `([^`]+)`[[:space:]]*$/\1/p' \
     | while IFS= read -r o; do r=false; [ -r "$o" ] && r=true; jq -nc --arg p "$o" --argjson r "$r" '{path: $p, readable: $r}'; done | jq -sc .)
-  jq -n --argjson issue "$issue" --arg plan "$plan" --argjson children "$children" --slurpfile pr "$tmp/pr" --rawfile diff "$tmp/diff" \
+  jq -n --argjson issue "$issue" --arg plan "$plan" --argjson children "$children" --arg afile "$afile" --argjson named "$named" --slurpfile pr "$tmp/pr" --rawfile diff "$tmp/diff" \
         --arg head "$(git rev-parse HEAD)" --arg branch "$(git branch --show-current)" --argjson clean "$clean" --argjson outputs "$outputs" \
-        '{issue: $issue, plan: $plan, children: $children, pr: $pr[0], diff: $diff, local: {head: $head, branch: $branch, clean: $clean, check_outputs: $outputs}}' ;;
+        '{issue: $issue, plan: $plan, children: $children, areas: {file: $afile, named: $named}, pr: $pr[0], diff: $diff, local: {head: $head, branch: $branch, clean: $clean, check_outputs: $outputs}}' ;;
 
 status)
   issues=$(gh issue list --state open --limit 200 --json number,title,labels,blockedBy,parent \

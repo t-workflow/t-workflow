@@ -205,3 +205,21 @@ while a plan for an issue whose Scope already names its paths mostly restates it
 Its default is the literal `protected`, which also covers a config written before the
 key existed, so no project's verdicts change until it narrows the list. The built-in set
 always needs both: those files decide what the gates do.
+
+## 2026-10-06 — Protected areas: judged at /t-open, read by the gate
+
+Some of what most needs review is not a path: a change can stop an action being audited
+without touching the audit module. A project may describe such areas in words in
+`.t-workflow/areas.md`. The judgment is made where the human reads it: `/t-open` writes
+the areas an issue touches onto the issue, the gate reads that section mechanically,
+and `/t-review` flags an area the diff touches that the issue misses. An agent may add
+an area, never remove one. Path globs stay as the backstop.
+
+Alternatives: the gate judging each diff with a model (a model call in CI, not
+reproducible); path hints matched as globs (only `protected` again, under another
+name). The known gap, an issue wrongly marked as touching no area and so never
+reviewed, gets no model call at `/t-ship`. The merge question shows the issue's areas
+beside the project's, and the human judges there, at a gate they already answer. That
+costs nothing per ship. A child of an initiative merges with no question, but the
+parent's question lists every child's areas. An area has no path, so `plan_required`
+cannot name one: a named area needs a plan only while `plan_required` is `protected`.

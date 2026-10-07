@@ -12,7 +12,7 @@ Read `.t-workflow/AGENTS.md` once for the whole run; the chained stages need not
 it again, but a spawned reviewer always does.
 
 **A task:**
-1. `/t-plan <id>` when `gate.sh work <id>` reports a protected scope with no plan.
+1. `/t-plan <id>` when `gate.sh work <id>` blocks for a missing plan.
 2. `/t-work <id>`.
 3. `/t-review <id>` when the diff is protected, in a subagent, told only the task id:
    its step 3 decides what to re-run, not the hand-off. `not-ready` → one fix

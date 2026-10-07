@@ -10,7 +10,7 @@
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 
-BUILTIN=".t-workflow/AGENTS.md .t-workflow/config .t-workflow/scripts .claude .agents .github/workflows AGENTS.md CLAUDE.md GEMINI.md"
+BUILTIN=".t-workflow/AGENTS.md .t-workflow/config .t-workflow/areas.md .t-workflow/scripts .claude .agents .github/workflows AGENTS.md CLAUDE.md GEMINI.md"
 
 # `protected` and `plan_required` arrive via lib.sh's config source, unseen in a
 # single-file analysis.

@@ -40,7 +40,10 @@ attribution goes; this skill never touches the working tree:
    **the rules** in `.t-workflow/AGENTS.md` (no weakened check, no tracker write),
    **unexplained removals** (behaviour, content, or tests gone without the issue
    saying so), and for a document deliverable: consistency, ambiguity, completeness —
-   not whether it is right, which is the human's call.
+   not whether it is right, which is the human's call. When `areas.file` is not empty,
+   **the classification**: judge the diff against each area's description; an area it
+   touches that is missing from `areas.named` is a blocker, which `/t-plan <id>` answers
+   by adding the area to the issue. Never propose removing a named area.
 3. Checks: `pr.files` through `.t-workflow/scripts/protected.sh` (exit 0 = protected)
    and `docs-only.sh`. A `## Checks run` line at a sha equal to `pr.headRefOid` whose
    output is readable (`local.check_outputs`) is **reused by reading that output**,
@@ -59,7 +62,7 @@ attribution goes; this skill never touches the working tree:
    longer reach the trunk, a merge that should not happen, or a gate silently skipped
    is high wherever it lives, a skill sentence included. So, never lower than high: a
    failed check, an unauthorized removal, a path outside scope, a protected path with
-   no `## Plan`. Only blocker and high hold the verdict; medium and low are posted for
+   no `## Plan`, a protected area the issue does not name. Only blocker and high hold the verdict; medium and low are posted for
    the human to decide.
 5. Post with `gh pr review <pr> --comment --body-file <file>`:
 
