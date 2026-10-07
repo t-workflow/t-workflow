@@ -8,8 +8,9 @@ description: Pin a task's allowed paths, risks, and checks onto its issue as a `
 Read `.t-workflow/AGENTS.md` and the issue (`.t-workflow/scripts/issue.sh view <id>`).
 Refuse a parent (`initiative`) issue: it has no diff to plan; name a child instead.
 
-1. Decide what the work must touch. Run `.t-workflow/scripts/protected.sh <paths>` on
-   those paths: exit 0 lists the protected ones, which is why this plan is required.
+1. Decide what the work must touch. Run `.t-workflow/scripts/protected.sh --plan <paths>`
+   on those paths: exit 0 lists the ones that need a plan, which is why this one is
+   required. Without `--plan` it lists the ones that will need a cold review.
 2. Read the code and documents the work depends on. Name every risk you can see: an
    existing behaviour the change could break, a check that cannot cover something, a
    judgment only a human can make.

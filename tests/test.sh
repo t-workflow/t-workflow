@@ -44,6 +44,21 @@ sedi 's|^protected=""|protected="db/migrate/* config/credentials"|' .t-workflow/
 expect_exit 0 "protected: config glob with *" "$S/protected.sh" db/migrate/001_init.rb
 expect_exit 0 "protected: config directory pattern matches beneath" "$S/protected.sh" config/credentials/prod.yml
 expect_exit 1 "protected: sibling of a config pattern" "$S/protected.sh" config/routes.rb
+# plan_required: which protected paths also need a plan (absent or `protected` = all of them)
+expect_exit 0 "plan: key as installed (protected) — a protected path needs a plan" "$S/protected.sh" --plan db/migrate/001_init.rb
+grep -v '^plan_required=' .t-workflow/config > cfg.tmp && cp cfg.tmp .t-workflow/config && rm cfg.tmp
+expect_exit 0 "plan: key absent — today's verdict, a protected path needs a plan" "$S/protected.sh" --plan db/migrate/001_init.rb
+expect_exit 1 "plan: key absent — an unprotected path needs none" "$S/protected.sh" --plan src/app.rb
+echo 'plan_required="config/credentials"' >> .t-workflow/config
+expect_exit 1 "plan: narrower list — a protected path outside it needs no plan" "$S/protected.sh" --plan db/migrate/001_init.rb
+expect_exit 0 "plan: narrower list — ... but still a review" "$S/protected.sh" db/migrate/001_init.rb
+expect_exit 0 "plan: narrower list — a path inside it needs a plan" "$S/protected.sh" --plan config/credentials/prod.yml
+expect_exit 0 "plan: narrower list — the built-in set still needs both" "$S/protected.sh" --plan .t-workflow/scripts/gate.sh
+"$S/protected.sh" --plan --list | grep -qx 'config/credentials' && ! "$S/protected.sh" --plan --list | grep -qx 'db/migrate/\*' && ok || bad "plan: --plan --list prints the plan set"
+sedi 's|^plan_required=.*|plan_required=""|' .t-workflow/config
+expect_exit 1 "plan: empty — only the built-in set needs a plan" "$S/protected.sh" --plan config/credentials/prod.yml
+expect_exit 0 "plan: empty — the built-in set still does" "$S/protected.sh" --plan .claude/skills/t-open/SKILL.md
+sedi 's|^plan_required=.*|plan_required="protected"|' .t-workflow/config
 expect_exit 0 "docs-only: markdown and docs/" bash -c "printf 'README.md\ndocs/a/b.txt\n' | $S/docs-only.sh"
 expect_exit 1 "docs-only: one source file" bash -c "printf 'README.md\nsrc/a.c\n' | $S/docs-only.sh"
 expect_exit 2 "docs-only: no input" bash -c "printf '' | $S/docs-only.sh"
@@ -239,10 +254,14 @@ out=$(bash "$ROOT/install.sh" v1 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1); ha
 # update keeps consumer-owned files, replaces owned ones
 (cd "$tmp/c" && echo 'hand edit' >> .claude/skills/t-open/SKILL.md && sedi 's/^check=.*/check="mine"/' .t-workflow/config && echo "mine" >> AGENTS.md && git add -A && git commit -qm c)
 (cd "$tmp/c" && grep -v '^exempt=' .t-workflow/config > cfg && printf '%s' "$(< cfg)" > .t-workflow/config && git add -A && git commit -qm "drop a key")
+# a config from before plan_required: no key, and the old one-line protected comment
+(cd "$tmp/c" && awk '/^# Globs whose diffs also need/{skip=1} skip&&/^plan_required=/{skip=0; next} skip{next} /^# unless plan_required below/{next} {sub(/A protected diff needs a cold review, and a plan$/, "A protected diff needs a plan and a cold review."); print}' .t-workflow/config > cfg && mv cfg .t-workflow/config && git add -A && git commit -qm "pre-plan_required config")
+grep -q 'plan_required' "$tmp/c/.t-workflow/config" && bad "install: fixture still carries plan_required" || ok
 out=$(bash "$ROOT/install.sh" v2 --from "$ROOT" --dir "$tmp/c" --no-pr 2>&1) || bad "install: update: $out"
 (cd "$tmp/c" && [ "$(cat .t-workflow/VERSION)" = v2 ] && grep -q '^check="mine"' .t-workflow/config && grep -q '^mine$' AGENTS.md && ! grep -q 'hand edit' .claude/skills/t-open/SKILL.md) && ok || bad "install: update replaced owned files and kept consumer ones"
 (cd "$tmp/c" && grep -q '^exempt=""' .t-workflow/config && grep -B1 '^exempt=""' .t-workflow/config | head -1 | grep -q '^# Branch globs') && has "$out" 'config: added exempt' && ok || bad "install: update appends a missing config key with its comment"
 [ "$(grep -c '^check=' "$tmp/c/.t-workflow/config")" = 1 ] && ok || bad "install: update does not duplicate present keys"
+(cd "$tmp/c" && grep -q '^plan_required="protected"$' .t-workflow/config && grep -q '^# unless plan_required below narrows that.$' .t-workflow/config && ! grep -q 'needs a plan and a cold review' .t-workflow/config) && has "$out" 'config: added plan_required' && ok || bad "install: update appends plan_required with its default and rewrites the old protected comment: $(grep -E 'protected' "$tmp/c/.t-workflow/config")"
 (cd "$tmp/c" && sed -i.bak 's|^# Build/test command the agent runs locally.*|# Build/test command, run as check 1 (empty = no check 1 yet).|; /^# CI does not run it/d; s|^# Branch globs exempt.*|# Branch globs exempt from the task gates in CI (e.g. "dependabot/*"). Check 1 still runs.|; s|^# Parsed by .t-workflow/scripts/\*.*|# Shell syntax: key="value". Read by .t-workflow/scripts/*.|; /^# inside the value, no variables/d' .t-workflow/config && rm -f .t-workflow/config.bak && git add -A && git commit -qm "old comments")
 bash "$ROOT/install.sh" v3 --from "$ROOT" --dir "$tmp/c" --no-pr >/dev/null 2>&1 || bad "install: update (comments)"
 (cd "$tmp/c" && grep -q '^# CI does not run it' .t-workflow/config && ! grep -q 'Check 1 still runs' .t-workflow/config && grep -q '^check="mine"' .t-workflow/config) && ok || bad "install: update rewrites the old default comments and keeps the values: $(grep -E '^#|^check=' "$tmp/c/.t-workflow/config" | head -8)"
@@ -449,7 +468,7 @@ sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config
 out=$(ci feature/x x); ! has "$out" 'exempt from the task gates' && has "$out" 'is not wip/<id>-<slug>' && ok || bad "ci: a PR cannot exempt itself with its own config: $out"
 git add -A && git commit -qm "self-exempt attempt"
 out=$(ci feature/x x); ! has "$out" 'exempt from the task gates' && ok || bad "ci: a committed self-exempt is still judged by the base: $out"
-has "$out" 'policy: exempt/protected/docs from origin/main' && ok || bad "ci: says where the policy came from: $out"
+has "$out" 'policy: exempt/protected/plan_required/docs from origin/main' && ok || bad "ci: says where the policy came from: $out"
 # ... but the base can: exempt the branch there and the gate stands down
 git checkout -q main && sedi 's|^exempt=""|exempt="dependabot/* feature/*"|' .t-workflow/config && git add -A && git commit -qm "exempt feature branches" && git push -q origin main && git fetch -q origin && git checkout -q wip/5-thing
 out=$(ci feature/x x); has "$out" 'exempt from the task gates' && ok || bad "ci: exempt branch (policy from the base)"
@@ -464,6 +483,13 @@ has "$out" 'OK: title starts with \[5\]' && ok || bad "ci: PR_REF still checks t
 git checkout -q wip/5-thing
 sedi 's|^check=""|check="false"|' .t-workflow/config
 if out=$(ci feature/x x); then ! has "$out" 'check 1 passed' && ! has "$out" 'running check' && ok || bad "ci: the check command is never run in CI: $out"; else bad "ci: a failing check command must not fail CI (the project's own CI runs it): $out"; fi
+# plan_required from the base: a protected path outside it needs the review and no plan
+git checkout -q .t-workflow/config && git checkout -q main
+sedi 's|^protected=""|protected="db/*"|; s|^plan_required=.*|plan_required=""|' .t-workflow/config && git commit -qam "db protected, no plan" && git push -q origin main && git fetch -q origin
+git checkout -q -b wip/6-db && mkdir -p db && echo x > db/x.sql && git add -A && git commit -qm db
+out=$(ci wip/6-db "[6] Db"); has "$out" 'OK: no path in the diff needs a plan' && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: plan_required narrower on the base — review, no plan: $out"
+git checkout -q main && grep -v '^plan_required=' .t-workflow/config > cfg.tmp && mv cfg.tmp .t-workflow/config && git commit -qam "no plan_required key" && git push -q origin main && git fetch -q origin && git checkout -q wip/6-db
+out=$(ci wip/6-db "[6] Db"); has "$out" "FAIL: diff needs exactly one '## Plan' on issue #6" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a base config without the key gives today's verdict — plan and review: $out"
 
 echo "# t-workflow.yml: the triggers, and the gate step in three base shapes"
 wf="$ROOT/.github/workflows/t-workflow.yml"
@@ -711,6 +737,13 @@ export CHILDREN='{}' PRS='[]'
 g() { PATH="$tmp/gh5:$PATH" "$S/gate.sh" "$@" 2>&1; }
 out=$(g work 33); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: task$' && has "$out" '^base: main$' && has "$out" 'create wip/33-c from origin/main' && ok || bad "gate work: a plain task's base is the trunk (exit $rc): $out"
 out=$(g work 30); rc=$?; [ "$rc" -eq 1 ] && has "$out" 'BLOCKED: #30 is a parent' && ok || bad "gate work: a parent has no branch (exit $rc): $out"
+# plan_required: a protected scope outside it needs a review later, no plan now
+ISSUES=$(printf '%s' "$ISSUES" | jq -c '.["39"] = {"number":39,"title":"Mig","state":"OPEN","labels":[],"body":"## Goal\nx\n## Scope\n`db/x.sql`\n","parent":null}'); export ISSUES
+sedi 's|^protected=""|protected="db/*"|' .t-workflow/config
+out=$(g work 39); rc=$?; [ "$rc" -eq 1 ] && has "$out" "BLOCKED: scope touches a path that needs a plan" && ok || bad "gate work: plan_required as installed — a protected scope needs a plan (exit $rc): $out"
+sedi 's|^plan_required=.*|plan_required=""|' .t-workflow/config
+out=$(g work 39); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^protected: db/x.sql$' && has "$out" '^plan-required: none in the declared scope$' && ok || bad "gate work: plan_required narrower — protected, no plan needed (exit $rc): $out"
+git checkout -q .t-workflow/config
 out=$(g work 31); rc=$?; [ "$rc" -eq 0 ] && has "$out" '^kind: child of #30$' && has "$out" '^base: wip/30-integration (integration branch of #30, created from origin/main)$' && has "$out" 'create wip/31-a from origin/wip/30-integration' && ok || bad "gate work: a child's base is the integration branch, created on first use (exit $rc): $out"
 git ls-remote --heads "$tmp/i-origin" | grep -q 'refs/heads/wip/30-integration$' && [ "$(git rev-parse origin/wip/30-integration)" = "$(git rev-parse origin/main)" ] && ok || bad "gate work: the integration branch exists on origin at the trunk's commit"
 out=$(g work 31); has "$out" '^base: wip/30-integration (integration branch of #30)$' && ok || bad "gate work: an existing integration branch is reused, not recreated: $out"
@@ -800,7 +833,7 @@ echo "# ci.sh: a child's PR and the initiative's PR"
 ci5() { BASE_REF="$1" HEAD_REF="$2" PR_NUMBER="$3" PR_TITLE="$4" GH_TOKEN=x PATH="$tmp/gh5:$PATH" "$S/ci.sh" 2>&1; }
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":32,"state":"CLOSED","stateReason":"COMPLETED","title":"B"}]}' BLOCKERS='{}'
 out=$(PR_REF=wip/31-a ci5 wip/30-integration wip/31-a 101 "[31] A"); rc=$?
-[ "$rc" -eq 0 ] && has "$out" 'policy: exempt/protected/docs from origin/wip/30-integration' && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a child's PR is judged by today's rules from its base, the integration branch (exit $rc): $out"
+[ "$rc" -eq 0 ] && has "$out" 'policy: exempt/protected/plan_required/docs from origin/wip/30-integration' && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a child's PR is judged by today's rules from its base, the integration branch (exit $rc): $out"
 out=$(PR_REF=wip/30-integration ci5 main wip/30-integration 102 "[30] Init"); rc=$?
 [ "$rc" -eq 0 ] && has "$out" 'OK: record docs/tasks/31-a.md' && has "$out" 'OK: record docs/tasks/32-b.md' && has "$out" 'OK: title starts with \[30\]' && ! has "$out" 'no record docs/tasks/30-' && ok || bad "ci: the initiative's PR is judged by its children's records, not its own (exit $rc): $out"
 export CHILDREN='{"30":[{"number":31,"state":"CLOSED","stateReason":"COMPLETED","title":"A"},{"number":36,"state":"CLOSED","stateReason":"COMPLETED","title":"E"}]}'

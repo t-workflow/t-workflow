@@ -2,15 +2,16 @@
 # The stage gates. Prints what a skill needs to know, one `key: value` per line, with
 # every blocking condition as a `BLOCKED: <reason>` line.
 #   gate.sh work <id>   may implementation start? issue open and not a parent, blockers
-#                       closed as completed, a plan where the scope is protected, the
+#                       closed as completed, a plan where the scope needs one, the
 #                       base branch (the trunk, or an initiative's integration branch,
 #                       created from the trunk when absent), branch and PR state,
 #                       whether this is a fresh or a fix pass.
 #   gate.sh ship <id>   may the PR merge? one open PR on the right base, record present
-#                       and valid, title, plan and current cold review on a protected
-#                       diff, blockers, mergeability, nothing unpushed, the review's
-#                       pending human checks (unknown when the review has no such
-#                       section — that blocks) and its open medium/low findings.
+#                       and valid, title, a plan where the diff needs one, a current
+#                       cold review on a protected diff, blockers, mergeability,
+#                       nothing unpushed, the review's pending human checks (unknown
+#                       when the review has no such section — that blocks) and its
+#                       open medium/low findings.
 #                       A child of an initiative merges into the integration branch
 #                       (`merge: automatic`); a parent's PR is the integration branch
 #                       to the trunk (`merge: confirm`): the integration branch carries
@@ -58,11 +59,15 @@ work)
   # Scope tokens: backticked paths in the issue's Scope, or the plan's Allowed paths.
   scope=$( { printf '%s\n' "$body" | section "Scope"; printf '%s\n' "$body" | section Plan; } \
     | grep -oE '`[^`]+`' | tr -d '`' | grep -E '^[A-Za-z0-9_./*-]+$' | sort -u || true)
+  # protected = needs a cold review; plan-required = needs a '## Plan' (protected.sh --plan).
   if [ -n "$scope" ]; then
     if prot=$(printf '%s\n' "$scope" | "$TW_SCRIPTS/protected.sh"); then
       echo "protected: $(printf '%s' "$prot" | tr '\n' ' ')"
-      [ "$plans" -eq 1 ] || block "scope touches a protected path and the issue has no '## Plan' — run /t-plan $id"
     else echo "protected: none in the declared scope"; fi
+    if planp=$(printf '%s\n' "$scope" | "$TW_SCRIPTS/protected.sh" --plan); then
+      echo "plan-required: $(printf '%s' "$planp" | tr '\n' ' ')"
+      [ "$plans" -eq 1 ] || block "scope touches a path that needs a plan and the issue has no '## Plan' — run /t-plan $id"
+    else echo "plan-required: none in the declared scope"; fi
   else echo "protected: scope not declared in backticks; judged from the diff later"; fi
 
   # The base: the trunk, or for a child of an initiative its integration branch,
@@ -199,11 +204,13 @@ ship)
   fi
 
   if prot=$(printf '%s\n' "$files" | "$TW_SCRIPTS/protected.sh"); then
-    echo "protected: $(printf '%s' "$prot" | tr '\n' ' ')"
-    # A parent's plans are its children's; each child was gated on its own.
-    [ "$kind" = parent ] || [ "$plans" -eq 1 ] || block "protected diff and no '## Plan' on the issue — run /t-plan $id, then /t-review $id"
-    required=yes
+    echo "protected: $(printf '%s' "$prot" | tr '\n' ' ')"; required=yes
   else echo "protected: none"; required=no; fi
+  # A parent's plans are its children's; each child was gated on its own.
+  if [ "$kind" != parent ] && planp=$(printf '%s\n' "$files" | "$TW_SCRIPTS/protected.sh" --plan); then
+    echo "plan-required: $(printf '%s' "$planp" | tr '\n' ' ')"
+    [ "$plans" -eq 1 ] || block "diff touches a path that needs a plan and the issue has no '## Plan' — run /t-plan $id, then /t-review $id"
+  fi
 
   rv=$(review_verdict "$(printf '%s' "$v" | jq -c .reviews)" "$(printf '%s' "$v" | jq -r '.commits[-1].committedDate')")
   printf '%s\n' "$rv" | sed 's/^/review-/'

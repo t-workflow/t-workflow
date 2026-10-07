@@ -412,8 +412,14 @@ default_config() {
 check=""
 
 # Extra protected globs, space-separated, on top of the built-in set
-# (e.g. "db/migrate/* config/*"). A protected diff needs a plan and a cold review.
+# (e.g. "db/migrate/* config/*"). A protected diff needs a cold review, and a plan
+# unless plan_required below narrows that.
 protected=""
+
+# Globs whose diffs also need a `## Plan` before work, same syntax as protected. The
+# literal protected means the same list as protected; "" means only the built-in set,
+# which always needs both. A glob here outside protected asks for a plan, no review.
+plan_required="protected"
 
 # Extra documentation globs, space-separated, on top of *.md and docs/*
 # (e.g. "site/*"). A documentation-only diff skips check 1.
@@ -438,7 +444,7 @@ if [ ! -f .t-workflow/config ]; then
 else
   # A release may add a key: append what this config lacks, with its comment, leaving present values alone.
   def=$(mktemp); default_config > "$def"
-  # Earlier releases' default comments said CI runs the check; rewrite those exact lines, values
+  # Earlier releases' default comments say what is no longer true; rewrite those exact lines, values
   # untouched. awk, not sed: a newline in a sed replacement is not portable to macOS.
   awk '
     $0 == "# Build/test command, run as check 1 (empty = no check 1 yet)." {
@@ -446,6 +452,9 @@ else
       print "# CI does not run it; the project'"'"'s own CI does."; next }
     $0 == "# Branch globs exempt from the task gates in CI (e.g. \"dependabot/*\"). Check 1 still runs." {
       print "# Branch globs exempt from the task gates in CI (e.g. \"dependabot/*\")."; next }
+    $0 == "# (e.g. \"db/migrate/* config/*\"). A protected diff needs a plan and a cold review." {
+      print "# (e.g. \"db/migrate/* config/*\"). A protected diff needs a cold review, and a plan"
+      print "# unless plan_required below narrows that."; next }
     $0 == "# Shell syntax: key=\"value\". Read by .t-workflow/scripts/*." {
       print "# Parsed by .t-workflow/scripts/*, never executed: key=\"value\" lines only, no quotes"
       print "# inside the value, no variables. Any other assignment is ignored and said on stderr."; next }

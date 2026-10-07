@@ -19,20 +19,23 @@ die() { echo "ERROR: $*" >&2; exit 2; }
 # single-quoted value, a quote inside the value, a $VAR) is said once on stderr, so an
 # empty value is never silent. TW_CONFIG_FILE points the parse at another file (ci.sh
 # exports a merged base-policy copy so the gate's children judge by the same values).
-check=""; protected=""; docs=""; exempt=""; reviewer_model=""
+# plan_required defaults to the literal `protected` ("the same as protected"), so a
+# config written before the key existed keeps today's verdicts.
+check=""; protected=""; docs=""; exempt=""; reviewer_model=""; plan_required="protected"
 load_config() {
-  check=""; protected=""; docs=""; exempt=""; reviewer_model=""
+  check=""; protected=""; docs=""; exempt=""; reviewer_model=""; plan_required="protected"
   local cfg="${1:-}" line kv n=0
   [ -n "$cfg" ] && [ -f "$cfg" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1)); line="${line%$'\r'}"
-    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model)="([^"$]*)"[[:space:]]*$/\1=\2/p')
+    kv=$(printf '%s' "$line" | sed -n -E 's/^[[:space:]]*(check|protected|docs|exempt|reviewer_model|plan_required)="([^"$]*)"[[:space:]]*$/\1=\2/p')
     case "$kv" in
       check=*) check="${kv#check=}" ;;
       protected=*) protected="${kv#protected=}" ;;
       docs=*) docs="${kv#docs=}" ;;
       exempt=*) exempt="${kv#exempt=}" ;;
       reviewer_model=*) reviewer_model="${kv#reviewer_model=}" ;;
+      plan_required=*) plan_required="${kv#plan_required=}" ;;
       "") [[ "$line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*= ]] && echo "config: line $n ignored: $line" >&2 ;;
     esac
   done < "$cfg"

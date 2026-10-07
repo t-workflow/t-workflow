@@ -196,3 +196,12 @@ whether a diff gets a plan and a cold review. Unprotected, one PR could empty
 so every config edit, even to `check=`, is planned and reviewed. CI already reads the
 policy from the base branch, which stops a PR judging itself by its own new values; this
 closes the other half, that the change to the values went unreviewed.
+
+## 2026-10-06 — A plan and a review are chosen separately
+
+A consumer's numbers: about one task in five needs a fix pass after the cold review,
+while a plan for an issue whose Scope already names its paths mostly restates it. So
+`protected` keeps deciding the review, and a new key, `plan_required`, decides the plan.
+Its default is the literal `protected`, which also covers a config written before the
+key existed, so no project's verdicts change until it narrows the list. The built-in set
+always needs both: those files decide what the gates do.

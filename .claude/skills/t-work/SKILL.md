@@ -73,8 +73,9 @@ commit the PR will carry, and a later commit leaves them at a stale sha.
    `check.sh "<command>"` the same way.
 2. Read the whole diff (`git diff origin/<base>...HEAD`): scope drift, unintended
    deletions, leftover scratch. An edit here is committed and re-runs check 1.
-3. Same file list through `.t-workflow/scripts/protected.sh`: protected and no plan →
-   stop for `/t-plan <id>` instead of opening a PR `/t-ship` will refuse.
+3. Same file list through `.t-workflow/scripts/protected.sh --plan`: a hit and no plan
+   → stop for `/t-plan <id>` instead of opening a PR `/t-ship` will refuse. Then
+   through `protected.sh` alone: a hit means the diff is protected and needs a review.
 
 Report results as they are; a failure is a failure.
 

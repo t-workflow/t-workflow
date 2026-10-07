@@ -17,7 +17,8 @@ agent session. Scripts under `.t-workflow/scripts/` make the judgments; skills c
    to it directly.
 4. **A protected diff needs a `## Plan` on its issue before implementation and a cold
    review before shipping.** Protection comes from the paths a diff touches, never from
-   a label.
+   a label. The config's `protected` decides the review and, unless its
+   `plan_required` narrows it, the plan; the built-in set always needs both.
 5. **A skill runs only when the human named it**, and nothing chains from one stage to
    the next. `/t-drive` is the one exception: named once, it chains the stages itself.
    Named means said: a reply that is terse, general, or about something else is not a
