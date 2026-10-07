@@ -7,7 +7,7 @@
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 
-BUILTIN=".t-workflow/AGENTS.md .t-workflow/scripts .claude .agents .github/workflows AGENTS.md CLAUDE.md GEMINI.md"
+BUILTIN=".t-workflow/AGENTS.md .t-workflow/config .t-workflow/scripts .claude .agents .github/workflows AGENTS.md CLAUDE.md GEMINI.md"
 
 # `protected` arrives via lib.sh's config source, unseen in a single-file analysis.
 # shellcheck disable=SC2154

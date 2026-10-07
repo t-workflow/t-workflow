@@ -187,3 +187,12 @@ consumer's diff does not grow — and the `## Checks run` line names it. The rev
 that output and re-runs only on a named doubt, narrowest command first. Output is local
 only: a reviewer on another machine finds it missing and falls back to a narrow re-run.
 Posting it on the PR was not done — size limits, and a comment per check is noise.
+
+## 2026-10-06 — The config is protected
+
+`.t-workflow/config` holds `protected`, `exempt`, and `docs`, the settings that decide
+whether a diff gets a plan and a cold review. Unprotected, one PR could empty
+`protected=` and skip the review that would have caught it. It joins the built-in set,
+so every config edit, even to `check=`, is planned and reviewed. CI already reads the
+policy from the base branch, which stops a PR judging itself by its own new values; this
+closes the other half, that the change to the values went unreviewed.

@@ -35,7 +35,9 @@ cd "$tmp/a" || exit
 expect_exit 0 "protected: a skill path" "$S/protected.sh" .claude/skills/t-open/SKILL.md
 expect_exit 0 "protected: the workflow file" "$S/protected.sh" .github/workflows/t-workflow.yml
 expect_exit 1 "protected: app code is not" "$S/protected.sh" src/app.rb
-expect_exit 1 "protected: config is not" "$S/protected.sh" .t-workflow/config
+expect_exit 0 "protected: the config itself, with protected= empty" "$S/protected.sh" .t-workflow/config
+expect_out ".t-workflow/config" "protected: the config echoes" "$S/protected.sh" .t-workflow/config
+"$S/protected.sh" --list | grep -qx '.t-workflow/config' && ok || bad "protected: --list includes the config"
 expect_exit 2 "protected: no input" bash -c "$S/protected.sh </dev/null"
 expect_out ".claude/skills/t-open/SKILL.md" "protected: echoes the hit" "$S/protected.sh" src/x .claude/skills/t-open/SKILL.md
 sedi 's|^protected=""|protected="db/migrate/* config/credentials"|' .t-workflow/config

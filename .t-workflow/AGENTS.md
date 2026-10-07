@@ -76,9 +76,11 @@ merge and replay the conflict); the trunk itself still moves only by a confirmed
 
 ## Protected paths
 
-`.t-workflow/AGENTS.md`, `.t-workflow/scripts/`, `.claude/`, `.agents/`,
-`.github/workflows/`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, plus the `protected`
-globs in `.t-workflow/config`. `.t-workflow/scripts/protected.sh` is the executable form.
+`.t-workflow/AGENTS.md`, `.t-workflow/config`, `.t-workflow/scripts/`, `.claude/`,
+`.agents/`, `.github/workflows/`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, plus the
+`protected` globs in `.t-workflow/config` — which is protected itself, so a diff cannot
+loosen the settings that judge it. `.t-workflow/scripts/protected.sh` is the executable
+form.
 
 ## Checks
 
