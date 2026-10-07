@@ -223,3 +223,12 @@ beside the project's, and the human judges there, at a gate they already answer.
 costs nothing per ship. A child of an initiative merges with no question, but the
 parent's question lists every child's areas. An area has no path, so `plan_required`
 cannot name one: a named area needs a plan only while `plan_required` is `protected`.
+
+## 2026-10-06 — A pure move needs no plan and no review
+
+Moving superseded records into a subfolder left a reviewer nothing to judge but the
+move. The gates now read `git diff --name-status -M`, and a 100%-similarity rename is
+protected only when either end is in the built-in set, where a move changes what runs.
+Any edit, addition, or deletion is judged as before. Reading name-status also judges
+both ends of every rename. A name list shows only the new path, so before this an
+edited move out of a protected directory read as unprotected.

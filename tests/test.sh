@@ -455,6 +455,18 @@ na() { (cd "$tmp/cfg" && . "$S/lib.sh" 2>/dev/null && printf '%b' "$1" | named_a
 [ "$(cd "$tmp/cfg" && . "$S/lib.sh" 2>/dev/null && printf '# Areas\n## Audit\nWhat gets audited.\nPaths: `audit/`\n## Billing\nHow a visit is billed.\n' | area_names | paste -sd '|' -)" = "Audit|Billing" ] && ok || bad "areas: area_names reads the headings"
 expect_exit 0 "areas: the areas file is in the built-in protected set" "$S/protected.sh" .t-workflow/areas.md
 
+echo "# protected.sh --status: a pure move outside the built-in set is not protected"
+ps() { (cd "$tmp/cfg" && printf "$1" | "$S/protected.sh" --status ${2:-}); }   # cfg: protected="ok/*"
+ps 'R100\tok/a.txt\tok/old/a.txt\n' >/dev/null && bad "status: a pure rename of a config-protected file is not protected" || ok
+ps 'R100\tok/a.txt\tok/old/a.txt\n' --plan >/dev/null && bad "status: ... and needs no plan" || ok
+ps 'R097\tok/a.txt\tok/old/a.txt\n' >/dev/null && ok || bad "status: a rename plus an edit stays protected"
+[ "$(ps 'R100\t.t-workflow/scripts/a.sh\t.t-workflow/scripts/b.sh\n')" = ".t-workflow/scripts/b.sh" ] && ok || bad "status: a pure rename within the built-in set stays protected"
+ps 'R100\tsrc/x.sh\t.claude/x.sh\n' >/dev/null && ok || bad "status: a pure move into the built-in set stays protected"
+[ "$(ps 'R100\t.claude/x.sh\tsrc/x.sh\n')" = ".claude/x.sh" ] && ok || bad "status: a pure move out of the built-in set stays protected"
+ps 'R090\t.claude/x.sh\tsrc/x.sh\n' >/dev/null && ok || bad "status: an edited move out of a protected directory is caught by its old path"
+ps 'D\tok/a.txt\nA\tok/b.txt\n' >/dev/null && ok || bad "status: a delete and an add of protected files stay protected"
+ps 'M\tsrc/a.txt\n' >/dev/null && bad "status: an unprotected edit is not protected" || ok
+
 echo "# ci.sh (offline parts)"
 mkdir -p "$tmp/e" && (cd "$tmp/e" && git init -q -b main && echo base > base.txt && git add -A && git commit -qm init && git clone -q --bare . "$tmp/e-origin" && git remote add origin "$tmp/e-origin" && git fetch -q origin)
 bash "$ROOT/install.sh" v0 --from "$ROOT" --dir "$tmp/e" --no-pr >/dev/null 2>&1 || bad "ci fixture: install"
@@ -501,6 +513,12 @@ git checkout -q -b wip/6-db && mkdir -p db && echo x > db/x.sql && git add -A &&
 out=$(ci wip/6-db "[6] Db"); has "$out" 'OK: no path in the diff needs a plan' && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: plan_required narrower on the base — review, no plan: $out"
 git checkout -q main && grep -v '^plan_required=' .t-workflow/config > cfg.tmp && mv cfg.tmp .t-workflow/config && git commit -qam "no plan_required key" && git push -q origin main && git fetch -q origin && git checkout -q wip/6-db
 out=$(ci wip/6-db "[6] Db"); has "$out" "FAIL: diff needs exactly one '## Plan' on issue #6" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a base config without the key gives today's verdict — plan and review: $out"
+# a pure move of protected files needs neither; the same move with an edit needs both
+git checkout -q main && mkdir -p db && printf 'one\ntwo\nthree\n' > db/old.sql && git add -A && git commit -qm "old migration" && git push -q origin main && git fetch -q origin
+git checkout -q -b wip/7-mv && mkdir -p db/archive && git mv db/old.sql db/archive/old.sql && printf '# 7 — Mv\nIssue: #7\n\n## Asked\nMove it.\n\n## Done when\nMoved.\n\n## Explicitly not\nnone\n\n## Decisions made along the way\n- none\n\n## Deviations / notes\n- none\n' > docs/tasks/7-mv.md && git add -A && git commit -qm mv || bad "ci fixture: a pure move"
+out=$(ci wip/7-mv "[7] Mv"); has "$out" 'OK: record docs/tasks/7-mv.md' && has "$out" 'OK: no path in the diff needs a plan' && has "$out" 'OK: not a protected diff' && ok || bad "ci: a pure move of a protected file needs no plan and no review: $out"
+echo four >> db/archive/old.sql && git commit -qam "edit too"
+out=$(ci wip/7-mv "[7] Mv"); has "$out" "FAIL: diff needs exactly one '## Plan' on issue #7" && has "$out" 'FAIL: protected diff needs a cold review' && ok || bad "ci: a move plus an edit is protected: $out"
 
 echo "# t-workflow.yml: the triggers, and the gate step in three base shapes"
 wf="$ROOT/.github/workflows/t-workflow.yml"

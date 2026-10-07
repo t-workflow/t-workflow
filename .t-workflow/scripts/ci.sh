@@ -24,6 +24,9 @@ fail() { echo "FAIL: $*"; rc=1; }
 git fetch -q origin "$BASE_REF" 2>/dev/null || true
 diff_range="origin/$BASE_REF...$PR_REF"
 changed=$(git -c core.quotePath=false diff --name-only "$diff_range")
+# Protection reads the name-status (protected.sh --status): a pure move outside the
+# built-in set is not protected, and both ends of every other rename are judged.
+status=$(git -c core.quotePath=false diff --name-status -M "$diff_range")
 [ -n "$changed" ] || fail "this PR changes no files"
 
 # Policy (exempt, protected, plan_required, docs) is read from the base branch, so a PR
@@ -140,7 +143,7 @@ else
     fi
     # A plan where plan_required says (protected.sh --plan), or for a named area while
     # plan_required is `protected`; a review where protected says, or for any named area.
-    planp=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh" --plan)
+    planp=$(printf '%s\n' "$status" | "$TW_SCRIPTS/protected.sh" --status --plan)
     # shellcheck disable=SC2154 # plan_required: set by load_config (lib.sh), sourced dynamically
     if [ "$parent_pr" = yes ]; then ok "a parent's plans are its children's; each child was gated on its own"
     elif [ -n "$planp" ] || { [ -n "$areas" ] && [ "$plan_required" = protected ]; }; then
@@ -149,7 +152,7 @@ else
     else
       [ "$plans" -le 1 ] && ok "no path in the diff needs a plan" || fail "issue #$id carries $plans '## Plan' sections"
     fi
-    prot=$(printf '%s\n' "$changed" | "$TW_SCRIPTS/protected.sh")
+    prot=$(printf '%s\n' "$status" | "$TW_SCRIPTS/protected.sh" --status)
     if [ -n "$prot" ] || [ -n "$areas" ]; then
       [ -n "$prot" ] && echo "protected paths: $(printf '%s' "$prot" | tr '\n' ' ')"
       reviews=$(gh pr view "$PR_NUMBER" --json reviews,commits 2>/dev/null) || reviews='{"reviews":[],"commits":[]}'

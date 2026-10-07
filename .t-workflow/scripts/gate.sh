@@ -214,11 +214,14 @@ ship)
     if [ -z "$rec" ]; then block "no record docs/tasks/$id-<slug>.md in the PR"; else check_record "$id" "$rec"; fi
   fi
 
-  if prot=$(printf '%s\n' "$files" | "$TW_SCRIPTS/protected.sh"); then
+  # Protection reads the name-status, so a pure move outside the built-in set is not
+  # protected and both ends of every other rename are judged (protected.sh --status).
+  status=$(git -c core.quotePath=false diff --name-status -M "origin/$prbase...origin/$branch")
+  if prot=$(printf '%s\n' "$status" | "$TW_SCRIPTS/protected.sh" --status); then
     echo "protected: $(printf '%s' "$prot" | tr '\n' ' ')"; required=yes
   else echo "protected: none"; required=no; fi
   # A parent's plans are its children's; each child was gated on its own.
-  if [ "$kind" != parent ] && planp=$(printf '%s\n' "$files" | "$TW_SCRIPTS/protected.sh" --plan); then
+  if [ "$kind" != parent ] && planp=$(printf '%s\n' "$status" | "$TW_SCRIPTS/protected.sh" --status --plan); then
     echo "plan-required: $(printf '%s' "$planp" | tr '\n' ' ')"
     [ "$plans" -eq 1 ] || block "diff touches a path that needs a plan and the issue has no '## Plan' — run /t-plan $id, then /t-review $id"
   fi

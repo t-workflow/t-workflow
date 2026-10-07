@@ -81,8 +81,9 @@ merge and replay the conflict); the trunk itself still moves only by a confirmed
 `.t-workflow/AGENTS.md`, `.t-workflow/config`, `.t-workflow/scripts/`, `.claude/`,
 `.agents/`, `.github/workflows/`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, plus the
 `protected` globs in `.t-workflow/config` — which is protected itself, so a diff cannot
-loosen the settings that judge it. `.t-workflow/scripts/protected.sh` is the executable
-form.
+loosen the settings that judge it. A pure move (git's 100% similarity) of a file outside
+the built-in set is not protected; a move into, out of, or within it is.
+`.t-workflow/scripts/protected.sh` is the executable form.
 
 ## Protected areas
 
